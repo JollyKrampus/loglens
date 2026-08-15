@@ -194,15 +194,197 @@
         <Setter Property="FontSize" Value="{StaticResource UiFontSize}" />
     </Style>
 
+    <!--
+      MenuItem has to be fully templated. The default Aero2 theme hardcodes the
+      submenu popup background to #FFF0F0F0 rather than reading
+      SystemColors.MenuBrushKey, so overriding the system brushes does nothing and
+      light text ends up on a near-white popup. Four templates are needed because
+      MenuItem switches on its Role.
+    -->
+
+    <Geometry x:Key="MenuCheckGeometry">M 0 4.5 L 3.2 7.7 L 8.6 1.2</Geometry>
+    <Geometry x:Key="MenuArrowGeometry">M 0 0 L 4 4 L 0 8 Z</Geometry>
+
+    <!-- Leaf item inside a dropdown -->
+    <ControlTemplate x:Key="MenuSubmenuItem" TargetType="MenuItem">
+        <Border x:Name="Bg" Background="Transparent" Padding="0" Margin="1,0"
+                CornerRadius="3" SnapsToDevicePixels="True">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="26" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Path x:Name="Check" Grid.Column="0"
+                      Data="{StaticResource MenuCheckGeometry}"
+                      Stroke="{DynamicResource App.Accent}" StrokeThickness="1.8"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Visibility="Collapsed" />
+
+                <ContentPresenter Grid.Column="1" ContentSource="Header"
+                                  RecognizesAccessKey="True"
+                                  VerticalAlignment="Center" Margin="2,6,10,6" />
+
+                <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}"
+                           Foreground="{DynamicResource App.FgFaint}"
+                           VerticalAlignment="Center" Margin="0,6,10,6" />
+            </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource App.Selection}" />
+            </Trigger>
+            <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{DynamicResource App.FgFaint}" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!-- Item inside a dropdown that itself opens a further dropdown -->
+    <ControlTemplate x:Key="MenuSubmenuHeader" TargetType="MenuItem">
+        <Border x:Name="Bg" Background="Transparent" Margin="1,0"
+                CornerRadius="3" SnapsToDevicePixels="True">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="26" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <ContentPresenter Grid.Column="1" ContentSource="Header"
+                                  RecognizesAccessKey="True"
+                                  VerticalAlignment="Center" Margin="2,6,10,6" />
+
+                <Path Grid.Column="2" Data="{StaticResource MenuArrowGeometry}"
+                      Fill="{DynamicResource App.FgDim}"
+                      VerticalAlignment="Center" Margin="0,0,8,0" />
+
+                <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                       Placement="Right" HorizontalOffset="-2" VerticalOffset="-3">
+                    <Border Background="{DynamicResource App.BgAlt}"
+                            BorderBrush="{DynamicResource App.Border}" BorderThickness="1"
+                            Padding="2" SnapsToDevicePixels="True">
+                        <StackPanel IsItemsHost="True"
+                                    KeyboardNavigation.DirectionalNavigation="Cycle" />
+                    </Border>
+                </Popup>
+            </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource App.Selection}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{DynamicResource App.FgFaint}" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!-- "File", "View", ... on the menu bar -->
+    <ControlTemplate x:Key="MenuTopLevelHeader" TargetType="MenuItem">
+        <Grid>
+            <Border x:Name="Bg" Background="Transparent" CornerRadius="3" Padding="10,5">
+                <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" />
+            </Border>
+
+            <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                   IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                   Placement="Bottom" VerticalOffset="1">
+                <Border Background="{DynamicResource App.BgAlt}"
+                        BorderBrush="{DynamicResource App.Border}" BorderThickness="1"
+                        Padding="2" SnapsToDevicePixels="True">
+                    <StackPanel IsItemsHost="True"
+                                KeyboardNavigation.DirectionalNavigation="Cycle" />
+                </Border>
+            </Popup>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource App.Hover}" />
+            </Trigger>
+            <Trigger Property="IsSubmenuOpen" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource App.Selection}" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!-- A menu-bar entry with no dropdown at all -->
+    <ControlTemplate x:Key="MenuTopLevelItem" TargetType="MenuItem">
+        <Border x:Name="Bg" Background="Transparent" CornerRadius="3" Padding="10,5">
+            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" />
+        </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource App.Hover}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{DynamicResource App.FgFaint}" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
     <Style TargetType="MenuItem">
         <Setter Property="Foreground" Value="{DynamicResource App.Fg}" />
         <Setter Property="FontSize" Value="{StaticResource UiFontSize}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template" Value="{StaticResource MenuSubmenuItem}" />
+        <Style.Triggers>
+            <Trigger Property="Role" Value="TopLevelHeader">
+                <Setter Property="Template" Value="{StaticResource MenuTopLevelHeader}" />
+            </Trigger>
+            <Trigger Property="Role" Value="TopLevelItem">
+                <Setter Property="Template" Value="{StaticResource MenuTopLevelItem}" />
+            </Trigger>
+            <Trigger Property="Role" Value="SubmenuHeader">
+                <Setter Property="Template" Value="{StaticResource MenuSubmenuHeader}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Right-click menus have the same hardcoded-background problem. -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="Foreground" Value="{DynamicResource App.Fg}" />
+        <Setter Property="FontSize" Value="{StaticResource UiFontSize}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{DynamicResource App.BgAlt}"
+                            BorderBrush="{DynamicResource App.Border}" BorderThickness="1"
+                            Padding="2" SnapsToDevicePixels="True">
+                        <StackPanel IsItemsHost="True"
+                                    KeyboardNavigation.DirectionalNavigation="Cycle" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="Separator">
         <Setter Property="Background" Value="{DynamicResource App.Border}" />
         <Setter Property="Height" Value="1" />
         <Setter Property="Margin" Value="0,3" />
+    </Style>
+
+    <!--
+      Separators inside a menu are styled by an explicit theme key, not by the
+      implicit Separator style above, so they need their own entry or they keep
+      the light default.
+    -->
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+        <Setter Property="Margin" Value="8,4" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Background="{DynamicResource App.Border}"
+                            SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="StatusBar">
