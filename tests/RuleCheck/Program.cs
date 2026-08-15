@@ -118,6 +118,7 @@ internal static class Program
         CheckTimestamps();
         CheckMergeOrdering();
         CheckAlerts();
+        CheckSounds();
         CheckTailer();
 
         Console.WriteLine();
@@ -356,6 +357,75 @@ internal static class Program
         var actual = svc.Decide(inForeground, view, viewEnabled, lines, out _, out _);
         Report(actual == expected, what, $"expected {expected}, got {actual}");
         svc.Dispose();
+    }
+
+    // ================= alert sounds =================
+
+    private static void CheckSounds()
+    {
+        Section("Alert sounds");
+
+        var all = SoundLibrary.All;
+
+        Report(all.Count >= 5, "the library always offers at least the system sounds",
+            $"got {all.Count}");
+
+        Report(all.Take(5).All(s => s.Id.StartsWith("system:")),
+            "system sounds come first, since they always exist",
+            "got: " + string.Join(", ", all.Take(5).Select(s => s.Id)));
+
+        // Every non-system entry must point at a file that is actually present,
+        // otherwise the dropdown offers sounds that silently fall back to a beep.
+        var broken = all
+            .Where(s => !s.Id.StartsWith("system:"))
+            .Where(s => SoundLibrary.ResolvePath(s.Id) is null)
+            .ToList();
+
+        Report(broken.Count == 0, "every listed sound resolves to a real file",
+            "unresolvable: " + string.Join(", ", broken.Select(s => s.Id)));
+
+        Report(all.Select(s => s.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() == all.Count,
+            "no duplicate entries in the dropdown",
+            $"{all.Count} entries, {all.Select(s => s.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count()} distinct");
+
+        // The shipped defaults have to exist or a fresh install is silent.
+        Report(SoundLibrary.ResolvePath(SoundLibrary.DefaultSound) is not null,
+            $"the default alert sound '{SoundLibrary.DefaultSound}' is present",
+            "not found under " + SoundLibrary.MediaFolder);
+
+        Report(SoundLibrary.ResolvePath(SoundLibrary.DefaultFatalSound) is not null,
+            $"the default FATAL sound '{SoundLibrary.DefaultFatalSound}' is present",
+            "not found under " + SoundLibrary.MediaFolder);
+
+        // Bad input must degrade to a beep, never throw, since this runs during an alert.
+        try
+        {
+            SoundLibrary.Play("does-not-exist.wav");
+            SoundLibrary.Play(null);
+            SoundLibrary.Play("");
+            SoundLibrary.Play(@"Z:\nope\missing.wav");
+            Report(true, "a missing or empty sound id degrades to a beep instead of throwing", "");
+        }
+        catch (Exception ex)
+        {
+            Report(false, "a missing or empty sound id degrades to a beep instead of throwing", ex.Message);
+        }
+
+        // Severity routing.
+        var s1 = new AlertSettings
+        {
+            SoundName = "a.wav",
+            FatalSoundName = "b.wav",
+            UseDistinctFatalSound = true
+        };
+        Report(s1.SoundFor(Severity.Error) == "a.wav" && s1.SoundFor(Severity.Fatal) == "b.wav",
+            "FATAL uses its own sound when that option is on",
+            $"error={s1.SoundFor(Severity.Error)}, fatal={s1.SoundFor(Severity.Fatal)}");
+
+        s1.UseDistinctFatalSound = false;
+        Report(s1.SoundFor(Severity.Fatal) == "a.wav",
+            "FATAL falls back to the main sound when the option is off",
+            $"fatal={s1.SoundFor(Severity.Fatal)}");
     }
 
     // ================= the tailer, against real files =================

@@ -178,15 +178,7 @@ public sealed class AlertService : IDisposable
 
     private void Notify(Window? owner, string viewName, string tabName, LogLine line, int count)
     {
-        if (_settings.PlaySound)
-        {
-            try
-            {
-                if (line.Severity == Severity.Fatal) System.Media.SystemSounds.Hand.Play();
-                else System.Media.SystemSounds.Exclamation.Play();
-            }
-            catch { /* no audio device is not an error worth surfacing */ }
-        }
+        if (_settings.PlaySound) SoundLibrary.Play(_settings.SoundFor(line.Severity));
 
         if (_settings.FlashTaskbar && owner is not null) Flash(owner);
 

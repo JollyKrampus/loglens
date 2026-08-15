@@ -71,8 +71,74 @@
         <TextBlock Text="HOW" Style="{StaticResource SectionHeader}" Margin="0,0,0,8" />
 
         <CheckBox Content="Show a notification" Margin="0,4" IsChecked="{Binding ShowToast}" />
-        <CheckBox Content="Play a sound" Margin="0,4" IsChecked="{Binding PlaySound}" />
         <CheckBox Content="Flash the taskbar button" Margin="0,4" IsChecked="{Binding FlashTaskbar}" />
+        <CheckBox x:Name="PlaySoundBox" Content="Play a sound" Margin="0,4"
+                  IsChecked="{Binding PlaySound}" />
+
+        <Grid Margin="20,8,0,4" IsEnabled="{Binding IsChecked, ElementName=PlaySoundBox}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="160" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Label Grid.Column="0" Content="Sound" />
+            <ComboBox Grid.Column="1" x:Name="SoundCombo" Margin="0,0,6,0"
+                      DisplayMemberPath="Display" SelectedValuePath="Id"
+                      SelectedValue="{Binding SoundName}"
+                      SelectionChanged="Sound_SelectionChanged" />
+            <Button Grid.Column="2" Content="▶" Width="34" Margin="0,0,6,0"
+                    Click="PreviewSound_Click" ToolTip="Play this sound" />
+            <Button Grid.Column="3" Content="Browse…" Click="BrowseSound_Click"
+                    ToolTip="Use your own .wav file" />
+        </Grid>
+
+        <Grid Margin="20,4,0,4" IsEnabled="{Binding IsChecked, ElementName=PlaySoundBox}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="160" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <CheckBox Grid.Column="1" x:Name="DistinctFatalBox"
+                      Content="Use a different sound for FATAL"
+                      IsChecked="{Binding UseDistinctFatalSound}" />
+        </Grid>
+
+        <Grid Margin="20,4,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="160" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="IsEnabled" Value="False" />
+                    <Style.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsChecked, ElementName=PlaySoundBox}" Value="True" />
+                                <Condition Binding="{Binding IsChecked, ElementName=DistinctFatalBox}" Value="True" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter Property="IsEnabled" Value="True" />
+                        </MultiDataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+
+            <Label Grid.Column="0" Content="FATAL sound" />
+            <ComboBox Grid.Column="1" x:Name="FatalSoundCombo" Margin="0,0,6,0"
+                      DisplayMemberPath="Display" SelectedValuePath="Id"
+                      SelectedValue="{Binding FatalSoundName}"
+                      SelectionChanged="FatalSound_SelectionChanged" />
+            <Button Grid.Column="2" Content="▶" Width="34" Margin="0,0,6,0"
+                    Click="PreviewFatalSound_Click" ToolTip="Play this sound" />
+            <Button Grid.Column="3" Content="Browse…" Click="BrowseFatalSound_Click"
+                    ToolTip="Use your own .wav file" />
+        </Grid>
+
+        <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="20,4,0,0"
+                   Text="Selecting a sound plays it, so you can hear what you are choosing." />
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
             <Button Content="Send test alert" Width="130" Margin="0,0,8,0" Click="Test_Click" />

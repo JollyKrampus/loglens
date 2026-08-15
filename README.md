@@ -126,6 +126,12 @@ and a taskbar flash. Clicking the notification jumps to the view that raised it.
 | **At most one alert every N seconds, per view** | A service failing hard emits thousands of errors a second. This is what stops that becoming thousands of notifications. |
 | **Only when LogLens is not the active window** | No point shouting about a line you're already reading. |
 | **Alerts for this view** | Mute dev and test, stay alert to prod. |
+| **Sound** | Pick from the Windows sound library — grouped into System, Recommended and everything else — or Browse for your own `.wav`. Selecting one plays it, and the ▶ button replays it. |
+| **Use a different sound for FATAL** | On by default, so a fatal is audibly distinct from a routine error without having to look. |
+
+Sounds default to *Windows Notify* for errors and *Windows Critical Stop* for
+fatals. A missing or unreadable file degrades to a plain beep rather than
+throwing — an alert is the worst possible moment to raise a second error.
 
 `Alerts ▸ Send a test alert` fires a sample so you can confirm it actually reaches
 you before you rely on it.

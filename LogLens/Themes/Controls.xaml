@@ -172,18 +172,124 @@
         </Setter>
     </Style>
 
+    <!--
+      ComboBox needs a full template for the same reason MenuItem does: the default
+      theme paints its own light chrome and ignores Background, so setting colours
+      alone left faint text on a near-white box.
+    -->
     <Style TargetType="ComboBox">
         <Setter Property="Foreground" Value="{DynamicResource App.Fg}" />
         <Setter Property="Background" Value="{DynamicResource App.BgSunken}" />
         <Setter Property="BorderBrush" Value="{DynamicResource App.Border}" />
         <Setter Property="FontSize" Value="{StaticResource UiFontSize}" />
-        <Setter Property="Padding" Value="5,3" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="MinHeight" Value="26" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton x:Name="Toggle" Focusable="False" ClickMode="Press"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay,
+                                                  RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="Chrome" CornerRadius="3"
+                                            Background="{DynamicResource App.BgSunken}"
+                                            BorderBrush="{DynamicResource App.Border}"
+                                            BorderThickness="1">
+                                        <Path x:Name="Arrow" Data="M 0 0 L 4 4 L 8 0"
+                                              Stroke="{DynamicResource App.FgDim}" StrokeThickness="1.6"
+                                              HorizontalAlignment="Right" VerticalAlignment="Center"
+                                              Margin="0,0,10,0" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Chrome" Property="BorderBrush"
+                                                    Value="{DynamicResource App.Accent}" />
+                                        </Trigger>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="Chrome" Property="BorderBrush"
+                                                    Value="{DynamicResource App.Accent}" />
+                                            <Setter TargetName="Arrow" Property="Stroke"
+                                                    Value="{DynamicResource App.Fg}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+
+                        <ContentPresenter IsHitTestVisible="False"
+                                          Content="{TemplateBinding SelectionBoxItem}"
+                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                          VerticalAlignment="Center"
+                                          Margin="9,0,28,0" />
+
+                        <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                               IsOpen="{TemplateBinding IsDropDownOpen}"
+                               Placement="Bottom" PopupAnimation="Fade">
+                            <Border Background="{DynamicResource App.BgAlt}"
+                                    BorderBrush="{DynamicResource App.Border}" BorderThickness="1"
+                                    Padding="2" SnapsToDevicePixels="True"
+                                    MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                <ScrollViewer>
+                                    <ItemsPresenter />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style TargetType="ComboBoxItem">
         <Setter Property="Foreground" Value="{DynamicResource App.Fg}" />
-        <Setter Property="Background" Value="{DynamicResource App.BgAlt}" />
-        <Setter Property="Padding" Value="6,3" />
+        <Setter Property="FontSize" Value="{StaticResource UiFontSize}" />
+        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="B" Background="Transparent" CornerRadius="3" Margin="1,1"
+                            Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="B" Property="Background" Value="{DynamicResource App.Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="B" Property="Background" Value="{DynamicResource App.Selection}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Tooltips default to the light system palette too. -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{DynamicResource App.Fg}" />
+        <Setter Property="FontSize" Value="{StaticResource UiFontSize}" />
+        <Setter Property="MaxWidth" Value="420" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{DynamicResource App.BgAlt}"
+                            BorderBrush="{DynamicResource App.Border}" BorderThickness="1"
+                            CornerRadius="3" Padding="8,5">
+                        <ContentPresenter />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ================= Chrome ================= -->

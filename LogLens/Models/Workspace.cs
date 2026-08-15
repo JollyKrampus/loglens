@@ -100,6 +100,9 @@ public sealed class AlertSettings : ObservableObject
     private string _customPattern = "";
     private bool _showToast = true;
     private bool _playSound = true;
+    private string _soundName = Services.SoundLibrary.DefaultSound;
+    private string _fatalSoundName = Services.SoundLibrary.DefaultFatalSound;
+    private bool _useDistinctFatalSound = true;
     private bool _flashTaskbar = true;
     private bool _onlyWhenUnfocused = true;
     private int _throttleSeconds = 15;
@@ -114,6 +117,25 @@ public sealed class AlertSettings : ObservableObject
 
     public bool ShowToast { get => _showToast; set => Set(ref _showToast, value); }
     public bool PlaySound { get => _playSound; set => Set(ref _playSound, value); }
+
+    /// <summary>
+    /// Sound id: "system:Name", a file name under %WinDir%\Media, or an absolute
+    /// path to any .wav the user picked.
+    /// </summary>
+    public string SoundName { get => _soundName; set => Set(ref _soundName, value); }
+
+    /// <summary>A fatal deserves to sound different from a run-of-the-mill error.</summary>
+    public string FatalSoundName { get => _fatalSoundName; set => Set(ref _fatalSoundName, value); }
+
+    public bool UseDistinctFatalSound
+    {
+        get => _useDistinctFatalSound;
+        set => Set(ref _useDistinctFatalSound, value);
+    }
+
+    /// <summary>The sound actually used for a given severity.</summary>
+    public string SoundFor(Severity severity)
+        => severity == Severity.Fatal && UseDistinctFatalSound ? FatalSoundName : SoundName;
     public bool FlashTaskbar { get => _flashTaskbar; set => Set(ref _flashTaskbar, value); }
 
     /// <summary>No point shouting at you about a line you are already looking at.</summary>
