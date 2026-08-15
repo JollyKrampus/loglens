@@ -121,6 +121,8 @@ internal static class Program
         CheckAlerts();
         CheckSounds();
         CheckTailer();
+        CheckSignatures();
+        CheckIssueStore();
 
         Console.WriteLine();
         var skipNote = _skipped > 0 ? $" ({_skipped} skipped)" : "";
@@ -441,6 +443,179 @@ internal static class Program
         Report(s1.SoundFor(Severity.Fatal) == "a.wav",
             "FATAL falls back to the main sound when the option is off",
             $"fatal={s1.SoundFor(Severity.Fatal)}");
+    }
+
+    // ================= issue grouping =================
+
+    private static void CheckSignatures()
+    {
+        Section("Issue signatures");
+
+        // The whole feature rests on this: the same fault logged repeatedly, with
+        // different ids, timings and counts, must collapse to one hash.
+        var a = SignatureBuilder.Build(
+            "2026-08-14 12:52:40.0472|ERROR|Acme.Payments.PaymentGateway|Timeout calling payments after 864ms for order 5512");
+        var b = SignatureBuilder.Build(
+            "2026-08-15 03:11:09.9911|ERROR|Acme.Payments.PaymentGateway|Timeout calling payments after 12ms for order 99013");
+
+        Report(a.Hash == b.Hash, "the same fault with different numbers and timestamps groups together",
+            $"a={a.Hash} b={b.Hash}\n        sigA={a.Signature}\n        sigB={b.Signature}");
+
+        // ...but genuinely different faults must not be merged.
+        var c = SignatureBuilder.Build(
+            "2026-08-14 12:52:40.0472|ERROR|Acme.Payments.PaymentGateway|Card declined for order 5512");
+        Report(a.Hash != c.Hash, "different messages stay separate", $"both hashed to {a.Hash}");
+
+        // Same message text from a different component is a different problem.
+        var d = SignatureBuilder.Build(
+            "2026-08-14 12:52:40.0472|ERROR|Acme.Orders.OrderService|Timeout calling payments after 864ms for order 5512");
+        Report(a.Hash != d.Hash, "the same message from a different logger stays separate",
+            $"both hashed to {a.Hash}");
+
+        // GUIDs, paths, URLs and quoted values are all per-occurrence noise.
+        var e1 = SignatureBuilder.Build(@"ERROR Worker Failed job 3f2504e0-4f89-11d3-9a0c-0305e82c3301 at C:\jobs\a.json from https://api.x/y ""batch-1""");
+        var e2 = SignatureBuilder.Build(@"ERROR Worker Failed job 8ab3d0f1-1111-2222-3333-444455556666 at D:\other\b.json from https://api.z/w ""batch-99""");
+        Report(e1.Hash == e2.Hash, "guids, paths, urls and quoted values are masked",
+            $"\n        {e1.Signature}\n        {e2.Signature}");
+
+        // An exception + stack gives a title a human can triage from.
+        var withStack = SignatureBuilder.Build(
+            "2026-08-14 12:52:44.1692|ERROR|Acme.Orders.OrderService|Timeout calling payments",
+            [
+                "System.Net.Http.HttpRequestException: The operation timed out.",
+                " ---> System.TimeoutException: A task was canceled.",
+                "   at Acme.Payments.PaymentClient.ChargeAsync(ChargeRequest r)",
+                "   at Acme.Orders.OrderService.PlaceAsync(Order o)"
+            ]);
+
+        Report(withStack.ExceptionType == "System.Net.Http.HttpRequestException",
+            "the exception type is extracted from the stack", $"got {withStack.ExceptionType ?? "null"}");
+
+        Report(withStack.FaultingMethod == "Acme.Payments.PaymentClient.ChargeAsync",
+            "the first stack frame is taken as the faulting method",
+            $"got {withStack.FaultingMethod ?? "null"}");
+
+        Report(withStack.Title == "HttpRequestException in PaymentClient.ChargeAsync — Timeout calling payments",
+            "the title reads like a bug report", $"got '{withStack.Title}'");
+
+        // Two faults sharing an exception and faulting method must still be tellable
+        // apart in the list, so the message has to reach the title.
+        var sameStackOtherMessage = SignatureBuilder.Build(
+            "2026-08-14 12:52:44.1692|ERROR|Acme.Orders.OrderService|Upstream returned 500 on attempt 4",
+            [
+                "System.Net.Http.HttpRequestException: The operation timed out.",
+                "   at Acme.Payments.PaymentClient.ChargeAsync(ChargeRequest r)"
+            ]);
+
+        Report(sameStackOtherMessage.Title != withStack.Title
+               && sameStackOtherMessage.Hash != withStack.Hash,
+            "two faults with the same exception and method get distinguishable titles",
+            $"a='{withStack.Title}'\n        b='{sameStackOtherMessage.Title}'");
+
+        // The same exception reached by a different call path is a different bug.
+        var otherPath = SignatureBuilder.Build(
+            "2026-08-14 12:52:44.1692|ERROR|Acme.Orders.OrderService|Timeout calling payments",
+            [
+                "System.Net.Http.HttpRequestException: The operation timed out.",
+                "   at Acme.Shipping.LabelClient.CreateAsync(LabelRequest r)"
+            ]);
+        Report(withStack.Hash != otherPath.Hash,
+            "the same exception from a different method is a separate issue",
+            $"both hashed to {withStack.Hash}");
+
+        Report(SignatureBuilder.IsContinuation("   at Acme.X.Y(Z z)")
+               && SignatureBuilder.IsContinuation(" ---> System.TimeoutException: nope")
+               && !SignatureBuilder.IsContinuation("2026-08-14 12:52:40.0472|INFO|Acme|fine"),
+            "continuation lines are recognised, ordinary lines are not", "");
+
+        // Serilog-style lines should still produce something sensible.
+        var serilog = SignatureBuilder.Build("[12:52:41 ERR] Acme.Payments Timeout after 900ms");
+        Report(serilog.Title.Length > 0 && !serilog.Title.Contains("12:52:41"),
+            "a Serilog line drops its timestamp from the title", $"got '{serilog.Title}'");
+    }
+
+    private static void CheckIssueStore()
+    {
+        Section("Issue database");
+
+        var path = Path.Combine(Path.GetTempPath(), $"loglens-issues-test-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            using (var store = new IssueStore(path))
+            {
+                var fp = SignatureBuilder.Build("ERROR Worker Timeout after 100ms");
+                var other = SignatureBuilder.Build("FATAL Worker Host is going down");
+
+                var now = DateTime.UtcNow;
+                store.Record([
+                    new IssueOccurrence(fp, Severity.Error, "ERROR Worker Timeout after 100ms", null, "Prod", "app.log", now),
+                    new IssueOccurrence(fp, Severity.Error, "ERROR Worker Timeout after 250ms", null, "Prod", "app.log", now.AddSeconds(1)),
+                    new IssueOccurrence(fp, Severity.Error, "ERROR Worker Timeout after 900ms", null, "Test", "other.log", now.AddSeconds(2)),
+                    new IssueOccurrence(other, Severity.Fatal, "FATAL Worker Host is going down", null, "Prod", "app.log", now.AddSeconds(3)),
+                ]);
+
+                var errors = store.Query(Severity.Error);
+                Report(errors.Count == 1 && errors[0].Count == 3,
+                    "three sightings of one fault aggregate into a single issue with count 3",
+                    $"rows={errors.Count}, count={errors.FirstOrDefault()?.Count}");
+
+                var row = errors[0];
+                Report(row.Views.Contains("Prod") && row.Views.Contains("Test"),
+                    "every environment it was seen in is recorded", $"views='{row.Views}'");
+
+                Report(row.Sources.Contains("app.log") && row.Sources.Contains("other.log"),
+                    "every source file is recorded", $"sources='{row.Sources}'");
+
+                Report(!row.Views.Contains("Prod,Prod"),
+                    "repeat sightings do not duplicate the environment list", $"views='{row.Views}'");
+
+                var counts = store.CountsBySeverity();
+                Report(counts.GetValueOrDefault(Severity.Error) == 1 && counts.GetValueOrDefault(Severity.Fatal) == 1,
+                    "counts are reported per severity",
+                    $"error={counts.GetValueOrDefault(Severity.Error)}, fatal={counts.GetValueOrDefault(Severity.Fatal)}");
+
+                // Jira key round-trip and the "hide filed" filter.
+                store.SetJiraKey(row.Hash, "PLAT-1234");
+                Report(store.Query(Severity.Error)[0].JiraKey == "PLAT-1234",
+                    "a Jira key can be recorded against an issue",
+                    $"got {store.Query(Severity.Error)[0].JiraKey ?? "null"}");
+
+                Report(store.Query(Severity.Error, includeFiled: false).Count == 0,
+                    "filed issues can be filtered out", "a filed issue was still returned");
+
+                store.SetIgnored(row.Hash, true);
+                Report(store.Query(Severity.Error).Count == 0
+                       && store.Query(Severity.Error, includeIgnored: true).Count == 1,
+                    "ignored issues are hidden unless asked for", "ignore filter did not apply");
+
+                // The generated ticket must contain the facts that make it useful.
+                var fatal = store.Query(Severity.Fatal)[0];
+                var ticket = JiraTemplate.Full(fatal, "PLAT");
+                Report(ticket.Contains("[FATAL]") && ticket.Contains("Occurrences")
+                       && ticket.Contains("Prod") && ticket.Contains(fatal.Hash),
+                    "the generated ticket carries severity, counts, environment and signature",
+                    "ticket was missing expected content");
+            }
+
+            // Reopening must find the data — the point is history across restarts.
+            using (var reopened = new IssueStore(path))
+            {
+                Report(reopened.Query(Severity.Fatal).Count == 1,
+                    "the database survives being closed and reopened",
+                    $"found {reopened.Query(Severity.Fatal).Count} fatal issue(s)");
+            }
+        }
+        finally
+        {
+            try
+            {
+                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(path) + "*"))
+                    File.Delete(f);
+            }
+            catch { /* temp files */ }
+        }
     }
 
     // ================= the tailer, against real files =================

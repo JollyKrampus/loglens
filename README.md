@@ -142,6 +142,71 @@ single .exe copied onto a jump box does not have.
 
 ---
 
+## Issues, and Jira tickets
+
+`Tools ▸ Issues…`
+
+Every fatal, error and warning line is accumulated into a **local SQLite database**,
+grouped into *distinct problems*. One bug logged ten thousand times is one row with
+a count of ten thousand — not ten thousand rows.
+
+The window is organised by **Fatal / Error / Warn**, each filter showing how many
+distinct issues it holds, sorted by severity then by how often each one fires.
+
+### How grouping works, without AI
+
+Occurrences are matched on a normalised signature. Everything that varies per
+occurrence is masked — timestamps, GUIDs, IP addresses, file paths, URLs, emails,
+hex, quoted strings and all numbers — leaving a skeleton that is identical for every
+instance of the same fault:
+
+```
+2026-08-14 12:52:40.0472|ERROR|Acme.Payments|Timeout calling payments after 864ms for order 5512
+2026-08-15 03:11:09.9911|ERROR|Acme.Payments|Timeout calling payments after 12ms for order 99013
+   -> both become:  Acme.Payments | Timeout calling payments after <n> for order <n>
+```
+
+For .NET logs it does better than that. A stack trace is highly structured, so the
+**exception type** and the **method that actually threw** are pulled out and become
+part of both the identity and the title:
+
+```
+HttpRequestException in PaymentClient.ChargeAsync — Timeout calling payments
+```
+
+The same exception reached by a different call path is correctly a different issue.
+
+This is all deterministic regex — no model, no network, no per-line cost, and the
+same input always produces the same grouping. That matters more than cleverness
+here: a grouping that drifts is worse than one that is merely good.
+
+### The Jira part
+
+LogLens does not talk to Jira. It writes the ticket for you and you paste it in.
+
+- **Copy Jira ticket** puts a full summary and description on the clipboard in Jira
+  wiki markup — severity, occurrence count, first and last seen, duration, affected
+  environments and log files, the exception and faulting method, a real sample with
+  its stack trace, the grouping signature, and a short "still to establish" checklist.
+- **Copy as plain text** for anything that doesn't speak Jira markup.
+- **Create in Jira…** opens Jira's new-issue form with the summary pre-filled and the
+  description already on your clipboard. Needs a Jira URL in Settings.
+- **Jira key** — record the key once you've raised it, and **Hide filed** drops it out
+  of the list so what's left is what nobody has ticketed yet.
+- **Ignore** parks a known-noisy issue without deleting its history.
+- **Export visible as CSV** for a spreadsheet.
+
+### Where it lives
+
+`loglens.issues.db` sits beside your workspace, so a portable install carries its
+history on the same stick. Turn the whole thing off with **Track issues** in Settings
+and nothing is written.
+
+Writes are queued and flushed on a background timer — log ingestion never waits on a
+disk write, and the queue is capped so a runaway log cannot eat memory.
+
+---
+
 ## Log formats
 
 `Tools ▸ Highlight rules ▸ Load preset…` ships four rule sets:

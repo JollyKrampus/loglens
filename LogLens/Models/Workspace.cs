@@ -160,6 +160,9 @@ public sealed class AppSettings : ObservableObject
     private bool _wordWrap;
     private bool _lightTheme;
     private int _mergeWindowMs = 1000;
+    private bool _trackIssues = true;
+    private string _jiraBaseUrl = "";
+    private string _jiraProjectKey = "";
 
     /// <summary>How often each file is checked for growth. 250 ms feels instant.</summary>
     public int PollIntervalMs { get => _pollIntervalMs; set => Set(ref _pollIntervalMs, Math.Clamp(value, 50, 10_000)); }
@@ -186,6 +189,18 @@ public sealed class AppSettings : ObservableObject
         get => _mergeWindowMs;
         set => Set(ref _mergeWindowMs, Math.Clamp(value, 0, 30_000));
     }
+
+    /// <summary>
+    /// Accumulate distinct fatal/error/warn problems into the local issue database.
+    /// Off means nothing is written and no database file is created.
+    /// </summary>
+    public bool TrackIssues { get => _trackIssues; set => Set(ref _trackIssues, value); }
+
+    /// <summary>e.g. https://yourcompany.atlassian.net — enables the "open in Jira" links.</summary>
+    public string JiraBaseUrl { get => _jiraBaseUrl; set => Set(ref _jiraBaseUrl, value); }
+
+    /// <summary>Default project key put on generated tickets, e.g. PLAT.</summary>
+    public string JiraProjectKey { get => _jiraProjectKey; set => Set(ref _jiraProjectKey, value); }
 }
 
 /// <summary>Everything persisted to loglens.workspace.json.</summary>

@@ -75,6 +75,9 @@
             </MenuItem>
 
             <MenuItem Header="_Tools">
+                <MenuItem Header="_Issues…" Click="Issues_Click" InputGestureText="Ctrl+I"
+                          ToolTip="Distinct problems accumulated in the local database, with ready-to-paste Jira tickets." />
+                <Separator />
                 <MenuItem Header="_Highlight rules…" Click="Rules_Click" />
                 <MenuItem Header="_Settings…" Click="Settings_Click" />
                 <Separator />

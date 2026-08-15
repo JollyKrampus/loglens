@@ -39,5 +39,14 @@
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
   </ItemGroup>
+  <!--
+    Pinned to the 8.x line to match net8.0; the 10.x packages drag in newer
+    Microsoft.Extensions assemblies for no benefit here. Microsoft.Data.Sqlite
+    carries a native e_sqlite3, which single-file publish handles because
+    IncludeNativeLibrariesForSelfExtract is on.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+  </ItemGroup>
 
 </Project>

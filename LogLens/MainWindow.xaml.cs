@@ -58,10 +58,20 @@ public partial class MainWindow : Window
         _alerts.AlertActivated += OnAlertActivated;
         _vm.AlertsDetected += OnAlertsDetected;
 
+        // The issue database lives beside the workspace, so a portable install keeps
+        // its history on the same stick.
+        var dbPath = Path.Combine(
+            Path.GetDirectoryName(_vm.WorkspacePath) ?? WorkspaceStore.RoamingDirectory,
+            "loglens.issues.db");
+
+        _issues = new IssueRecorder(new IssueStore(dbPath), _vm.Settings);
+        _vm.LinesIngested += (view, tab, lines) => _issues.Observe(view.Name, tab.Header, lines);
+
         Closing += OnClosing;
     }
 
     private readonly AlertService _alerts;
+    private readonly IssueRecorder _issues;
 
     /// <summary>A file tab took on error-level lines; let the alert service decide what to do.</summary>
     private void OnAlertsDetected(ViewVm view, LogTab tab, IReadOnlyList<LogLine> lines)
@@ -150,6 +160,7 @@ public partial class MainWindow : Window
         }
 
         _alerts.Dispose();
+        _issues.Dispose();      // flushes anything still queued
         _vm.Dispose();
     }
 
@@ -421,6 +432,12 @@ public partial class MainWindow : Window
         var dlg = new SettingsWindow(_vm.Settings) { Owner = this };
         dlg.ShowDialog();
         _vm.Dirty = true;
+    }
+
+    private void Issues_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new IssuesWindow(_issues, _vm.Settings) { Owner = this };
+        dlg.ShowDialog();
     }
 
     private void AlertSettings_Click(object sender, RoutedEventArgs e)

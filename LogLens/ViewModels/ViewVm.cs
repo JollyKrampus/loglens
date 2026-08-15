@@ -39,6 +39,9 @@ public sealed class ViewVm : ObservableObject, IDisposable
     /// <summary>Raised when a file tab ingests error-level lines, for the alert service.</summary>
     public event Action<ViewVm, LogTab, IReadOnlyList<LogLine>>? AlertsDetected;
 
+    /// <summary>Raised for every ingested batch, for the issue recorder.</summary>
+    public event Action<ViewVm, LogTab, IReadOnlyList<LogLine>>? LinesIngested;
+
     public ViewVm(ViewDef def, AppSettings settings, Func<IEnumerable<HighlightRule>> globalRules)
     {
         Def = def;
@@ -189,6 +192,12 @@ public sealed class ViewVm : ObservableObject, IDisposable
         };
 
         tab.AlertsDetected += (t, lines) => AlertsDetected?.Invoke(this, t, lines);
+
+        tab.LinesAppended += e =>
+        {
+            // A rewind carries no lines; it only signals that the file restarted.
+            if (!e.Rewound) LinesIngested?.Invoke(this, e.Tab, e.Lines);
+        };
 
         Tabs.Add(tab);
         ReindexSources();

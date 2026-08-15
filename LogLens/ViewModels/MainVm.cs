@@ -30,6 +30,9 @@ public sealed class MainVm : ObservableObject, IDisposable
     /// <summary>Bubbled up from any view so the shell can notify once, in one place.</summary>
     public event Action<ViewVm, LogTab, IReadOnlyList<LogLine>>? AlertsDetected;
 
+    /// <summary>Every ingested batch from every view, for the issue recorder.</summary>
+    public event Action<ViewVm, LogTab, IReadOnlyList<LogLine>>? LinesIngested;
+
     public string WorkspacePath
     {
         get => _workspacePath;
@@ -81,6 +84,7 @@ public sealed class MainVm : ObservableObject, IDisposable
     private ViewVm Track(ViewVm view)
     {
         view.AlertsDetected += (v, tab, lines) => AlertsDetected?.Invoke(v, tab, lines);
+        view.LinesIngested += (v, tab, lines) => LinesIngested?.Invoke(v, tab, lines);
         return view;
     }
 
