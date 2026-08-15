@@ -14,6 +14,7 @@ namespace RuleCheck;
 internal static class Program
 {
     private static int _failures;
+    private static int _skipped;
 
     private static int Main()
     {
@@ -122,13 +123,15 @@ internal static class Program
         CheckTailer();
 
         Console.WriteLine();
+        var skipNote = _skipped > 0 ? $" ({_skipped} skipped)" : "";
+
         if (_failures == 0)
         {
-            Console.WriteLine("All checks passed.");
+            Console.WriteLine($"All checks passed{skipNote}.");
             return 0;
         }
 
-        Console.WriteLine($"{_failures} check(s) FAILED.");
+        Console.WriteLine($"{_failures} check(s) FAILED{skipNote}.");
         return 1;
     }
 
@@ -388,14 +391,26 @@ internal static class Program
             "no duplicate entries in the dropdown",
             $"{all.Count} entries, {all.Select(s => s.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count()} distinct");
 
-        // The shipped defaults have to exist or a fresh install is silent.
-        Report(SoundLibrary.ResolvePath(SoundLibrary.DefaultSound) is not null,
-            $"the default alert sound '{SoundLibrary.DefaultSound}' is present",
-            "not found under " + SoundLibrary.MediaFolder);
+        // The shipped defaults have to exist or a fresh install is silent. Windows
+        // Server images ship almost no .wav files, so on a bare CI runner this is
+        // skipped rather than failed — the app already falls back to a beep there.
+        bool hasMedia = all.Any(s => !s.Id.StartsWith("system:"));
 
-        Report(SoundLibrary.ResolvePath(SoundLibrary.DefaultFatalSound) is not null,
-            $"the default FATAL sound '{SoundLibrary.DefaultFatalSound}' is present",
-            "not found under " + SoundLibrary.MediaFolder);
+        if (!hasMedia)
+        {
+            Skip("default alert sounds are present",
+                $"no .wav files under {SoundLibrary.MediaFolder} (expected on a Windows Server image)");
+        }
+        else
+        {
+            Report(SoundLibrary.ResolvePath(SoundLibrary.DefaultSound) is not null,
+                $"the default alert sound '{SoundLibrary.DefaultSound}' is present",
+                "not found under " + SoundLibrary.MediaFolder);
+
+            Report(SoundLibrary.ResolvePath(SoundLibrary.DefaultFatalSound) is not null,
+                $"the default FATAL sound '{SoundLibrary.DefaultFatalSound}' is present",
+                "not found under " + SoundLibrary.MediaFolder);
+        }
 
         // Bad input must degrade to a beep, never throw, since this runs during an alert.
         try
@@ -559,6 +574,17 @@ internal static class Program
         var rule = set.Match(line);
         bool ok = rule?.Name == expectedRule && rule.Severity == expectedSeverity;
         Report(ok, what, $"expected rule '{expectedRule}'/{expectedSeverity}, got '{rule?.Name ?? "none"}'/{rule?.Severity ?? Severity.None}");
+    }
+
+    /// <summary>
+    /// For checks that depend on the machine rather than on our code. A skip is
+    /// reported loudly but does not fail the run.
+    /// </summary>
+    private static void Skip(string what, string why)
+    {
+        _skipped++;
+        Console.WriteLine($"  SKIP  {what}");
+        Console.WriteLine($"        {why}");
     }
 
     private static void Report(bool ok, string what, string detail)

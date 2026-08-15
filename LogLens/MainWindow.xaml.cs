@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -479,9 +480,20 @@ public partial class MainWindow : Window
 
     private void About_Click(object sender, RoutedEventArgs e)
     {
+        // Read the version from the assembly so it cannot drift from the .csproj.
+        var version = System.Reflection.Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+            ?? System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+            ?? "unknown";
+
+        // Single-file builds append a source-revision suffix; trim it.
+        var plus = version.IndexOf('+');
+        if (plus > 0) version = version[..plus];
+
         MessageBox.Show(
             $"""
-            LogLens 1.0
+            LogLens {version}
 
             A portable real-time log viewer for Windows.
             No install, no service, no account, no telemetry.
