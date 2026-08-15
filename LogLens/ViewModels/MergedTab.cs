@@ -21,7 +21,12 @@ namespace LogLens.ViewModels;
 /// </summary>
 public sealed class MergedTab : LogPaneVm
 {
-    private sealed record Held(LogLine Line, long ArrivalMs);
+    /// <summary>
+    /// Holds the owning tab rather than just the line, so the source name, colour and
+    /// index are read at release time. Baking them into the line at creation went
+    /// stale whenever a tab was added or removed and the sources were re-indexed.
+    /// </summary>
+    private sealed record Held(LogTab Tab, LogLine Line, long ArrivalMs);
 
     private readonly List<Held> _held = new();
     private readonly List<LogTab> _sources = new();
@@ -81,15 +86,63 @@ public sealed class MergedTab : LogPaneVm
     {
         if (e.Rewound)
         {
-            // That file restarted; drop anything of its still waiting to be released.
-            _held.RemoveAll(h => h.Line.SourceIndex == e.Tab.SourceIndex);
+            // That file restarted and its own buffer has already been cleared. Rebuild
+            // from what every source currently holds; dropping only the pending lines
+            // would leave the pre-rotation copies behind and the file would appear
+            // twice as the tailer re-delivered it.
+            Reseed();
             return;
         }
 
         long now = Environment.TickCount64;
         foreach (var line in e.Lines)
-            _held.Add(new Held(line, now));
+            _held.Add(new Held(e.Tab, line, now));
+
+        // Pausing must not let the holding buffer grow without limit.
+        int cap = Math.Max(1000, Settings.MaxLines);
+        if (_held.Count > cap) _held.RemoveRange(0, _held.Count - cap);
     }
+
+    /// <summary>
+    /// Rebuilds the whole merged buffer from the sources' current contents. Used when
+    /// the set of sources changes, when one rotates, and when the tab is first shown —
+    /// anything that would otherwise leave stale or duplicated lines behind.
+    /// </summary>
+    public void Reseed()
+    {
+        _held.Clear();
+        _lastReleased = null;
+        _nextNumber = 1;
+        ResetBuffer();
+
+        var gathered = new List<(LogTab Tab, LogLine Line)>();
+        foreach (var tab in _sources)
+            foreach (var line in tab.Buffer)
+                gathered.Add((tab, line));
+
+        gathered.Sort(static (a, b) =>
+        {
+            int c = Nullable.Compare(a.Line.Timestamp, b.Line.Timestamp);
+            if (c != 0) return c;
+            c = a.Tab.SourceIndex.CompareTo(b.Tab.SourceIndex);
+            if (c != 0) return c;
+            return a.Line.Number.CompareTo(b.Line.Number);
+        });
+
+        var built = new List<LogLine>(gathered.Count);
+        foreach (var (tab, line) in gathered)
+            built.Add(Stamp(tab, line));
+
+        AppendLines(built, out _);
+
+        if (built.Count > 0) _lastReleased = built[^1].Timestamp;
+        UpdateStatus();
+    }
+
+    /// <summary>Re-numbers a line for the merged view and stamps its current source.</summary>
+    private LogLine Stamp(LogTab tab, LogLine line)
+        => new(_nextNumber++, line.Text, line.Rule, line.Timestamp,
+               tab.Header, tab.SourceIndex, tab.SourceBrush);
 
     // ---- release ----------------------------------------------------------------
 
@@ -120,19 +173,15 @@ public sealed class MergedTab : LogPaneVm
         {
             int c = Nullable.Compare(a.Line.Timestamp, b.Line.Timestamp);
             if (c != 0) return c;
-            c = a.Line.SourceIndex.CompareTo(b.Line.SourceIndex);
+            c = a.Tab.SourceIndex.CompareTo(b.Tab.SourceIndex);
             if (c != 0) return c;
             return a.Line.Number.CompareTo(b.Line.Number);
         });
 
-        // Renumber so the merged view has its own continuous line numbers.
+        // Renumber so the merged view has its own continuous line numbers, and take
+        // the source identity from the tab as it is right now.
         var lines = new List<LogLine>(ready.Count);
-        foreach (var h in ready)
-        {
-            var l = h.Line;
-            lines.Add(new LogLine(_nextNumber++, l.Text, l.Rule, l.Timestamp,
-                                  l.SourceName, l.SourceIndex, l.SourceBrush));
-        }
+        foreach (var h in ready) lines.Add(Stamp(h.Tab, h.Line));
 
         var first = lines[0].Timestamp;
         bool outOfOrder = first is not null && _lastReleased is not null && first < _lastReleased;

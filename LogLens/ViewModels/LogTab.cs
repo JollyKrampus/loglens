@@ -121,6 +121,12 @@ public sealed class LogTab : LogPaneVm
             if (Paused)
             {
                 _pending.AddRange(batch.Lines);
+
+                // Pause holds lines back, but a busy log left paused must not grow
+                // the buffer without limit. Oldest go first, same as the ring buffer.
+                int cap = Math.Max(1000, Settings.MaxLines);
+                if (_pending.Count > cap) _pending.RemoveRange(0, _pending.Count - cap);
+
                 RaiseStats();
                 return;
             }

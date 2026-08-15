@@ -1,3 +1,5 @@
+using System.IO;
+using System.Text;
 using LogLens.Models;
 using LogLens.Services;
 using LogLens.ViewModels;
@@ -116,6 +118,7 @@ internal static class Program
         CheckTimestamps();
         CheckMergeOrdering();
         CheckAlerts();
+        CheckTailer();
 
         Console.WriteLine();
         if (_failures == 0)
@@ -353,6 +356,112 @@ internal static class Program
         var actual = svc.Decide(inForeground, view, viewEnabled, lines, out _, out _);
         Report(actual == expected, what, $"expected {expected}, got {actual}");
         svc.Dispose();
+    }
+
+    // ================= the tailer, against real files =================
+
+    private static void CheckTailer()
+    {
+        Section("Tailer");
+
+        var dir = Path.Combine(Path.GetTempPath(), "loglens-tailer-tests");
+        Directory.CreateDirectory(dir);
+
+        CheckCrlfAcrossReadBoundary(dir);
+        CheckTruncateAndRewrite(dir);
+
+        try { Directory.Delete(dir, true); } catch { /* best effort */ }
+    }
+
+    /// <summary>
+    /// The tailer reads in 64 KB chunks. This file is built so that a \r sits on the
+    /// very last byte of the first chunk and its \n opens the second, which used to
+    /// be emitted as an extra blank line.
+    /// </summary>
+    private static void CheckCrlfAcrossReadBoundary(string dir)
+    {
+        var path = Path.Combine(dir, "crlf-boundary.log");
+
+        // 65535 bytes of filler puts the \r at byte offset 65535 — the last byte the
+        // first 65536-byte read consumes.
+        var content = new string('x', 65535) + "\r\n" + "second line\r\n" + "third line\r\n";
+        File.WriteAllText(path, content, new UTF8Encoding(false));
+
+        var lines = Collect(path, TimeSpan.FromSeconds(2), expected: 3, out var error);
+
+        bool noBlanks = lines.All(l => l.Length > 0);
+        bool rightCount = lines.Count == 3;
+        bool rightOrder = rightCount
+                          && lines[0].Length == 65535
+                          && lines[1] == "second line"
+                          && lines[2] == "third line";
+
+        Report(noBlanks && rightOrder,
+            "a CRLF split across the 64 KB read boundary does not emit a blank line",
+            $"got {lines.Count} lines, blanks={lines.Count(l => l.Length == 0)}, error={error ?? "none"}");
+    }
+
+    /// <summary>
+    /// Truncate-and-rewrite is the logrotate copytruncate pattern. It used to discard
+    /// the decoder without clearing the primed flag, so the next read dereferenced null.
+    /// </summary>
+    private static void CheckTruncateAndRewrite(string dir)
+    {
+        var path = Path.Combine(dir, "rotate.log");
+        File.WriteAllText(path, "one\r\ntwo\r\n", new UTF8Encoding(false));
+
+        var got = new List<string>();
+        string? lastError = null;
+
+        var tailer = new LogTailer(path, 0);
+        tailer.Batch += b => { lock (got) got.AddRange(b.Lines); };
+        tailer.Start(40);
+
+        try
+        {
+            WaitFor(() => { lock (got) return got.Count >= 2; }, TimeSpan.FromSeconds(2));
+
+            // Rewrite smaller than before, which is what makes the tailer see a truncation.
+            File.WriteAllText(path, "fresh\r\n", new UTF8Encoding(false));
+
+            WaitFor(() => { lock (got) return got.Contains("fresh"); }, TimeSpan.FromSeconds(3));
+            lastError = tailer.LastError;
+        }
+        finally { tailer.Dispose(); }
+
+        bool sawFresh;
+        lock (got) sawFresh = got.Contains("fresh");
+
+        Report(sawFresh && lastError is null,
+            "a truncated-and-rewritten file keeps tailing instead of throwing",
+            $"sawFresh={sawFresh}, lastError={lastError ?? "none"}, lines=[{string.Join(", ", got)}]");
+    }
+
+    private static List<string> Collect(string path, TimeSpan timeout, int expected, out string? error)
+    {
+        var got = new List<string>();
+        var tailer = new LogTailer(path, 0);
+        tailer.Batch += b => { lock (got) got.AddRange(b.Lines); };
+        tailer.Start(40);
+
+        try
+        {
+            WaitFor(() => { lock (got) return got.Count >= expected; }, timeout);
+            error = tailer.LastError;
+        }
+        finally { tailer.Dispose(); }
+
+        lock (got) return got.ToList();
+    }
+
+    private static void WaitFor(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition()) return;
+            Thread.Sleep(25);
+        }
     }
 
     private static List<HighlightRule> Preset(string name)

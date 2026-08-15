@@ -141,8 +141,10 @@ public sealed class ViewVm : ObservableObject, IDisposable
 
             _merged.Attach(FileTabs);
 
-            // The merged tab starts empty, so pull the existing buffers through it.
-            foreach (var t in FileTabs) t.ReloadFromDisk();
+            // Seed from what the tabs already hold. Reloading them from disk would
+            // work too, but it clears every file tab's buffer and scroll position —
+            // turning the merged view on must not destroy the panes beside it.
+            _merged.Reseed();
         }
         else if (_merged is not null)
         {
@@ -170,6 +172,7 @@ public sealed class ViewVm : ObservableObject, IDisposable
         tab.Start(BuildRules());
         ReindexSources();
         _merged?.Attach(FileTabs);
+        _merged?.Reseed();   // re-index invalidated the stamped source of merged lines
         SelectedTab = tab;
         return tab;
     }
@@ -214,6 +217,7 @@ public sealed class ViewVm : ObservableObject, IDisposable
 
         ReindexSources();
         _merged?.Attach(FileTabs);
+        _merged?.Reseed();   // re-index invalidated the stamped source of merged lines
 
         SelectedTab = Tabs.FirstOrDefault();
         RefreshBadges();

@@ -33,6 +33,7 @@ public sealed class LogTailer : IDisposable
     private Decoder? _decoder;
     private Encoding _encoding = new UTF8Encoding(false);
     private readonly StringBuilder _partial = new();
+    private bool _pendingCr;
     private bool _primed;
     private string? _lastError;
 
@@ -66,6 +67,7 @@ public sealed class LogTailer : IDisposable
             _position = 0;
             _decoder = null;
             _partial.Clear();
+            _pendingCr = false;
             _resolvedPath = null;
         }
         finally { _gate.Release(); }
@@ -96,6 +98,7 @@ public sealed class LogTailer : IDisposable
                 _position = 0;
                 _decoder = null;
                 _partial.Clear();
+                _pendingCr = false;
                 _primed = false;
                 rewound = true;
             }
@@ -108,11 +111,16 @@ public sealed class LogTailer : IDisposable
             long length = fs.Length;
 
             // Truncated in place (log rotated by overwrite, or someone cleared it).
+            // _primed must be cleared too: the decoder is discarded here, and only the
+            // priming block below recreates it. Leaving _primed set skipped that block
+            // and the next read dereferenced a null decoder.
             if (length < _position)
             {
                 _position = 0;
                 _decoder = null;
                 _partial.Clear();
+                _pendingCr = false;
+                _primed = false;
                 rewound = true;
             }
 
@@ -187,7 +195,17 @@ public sealed class LogTailer : IDisposable
     private void Consume(ReadOnlySpan<char> span, List<string> into)
     {
         int start = 0;
-        for (int i = 0; i < span.Length; i++)
+
+        // A \r\n pair can straddle two reads. Without this the trailing \n opens the
+        // next chunk and is emitted as an empty line, which happens on any CRLF file
+        // larger than the 64 KB read buffer.
+        if (_pendingCr)
+        {
+            _pendingCr = false;
+            if (span.Length > 0 && span[0] == '\n') start = 1;
+        }
+
+        for (int i = start; i < span.Length; i++)
         {
             char c = span[i];
             if (c != '\n' && c != '\r') continue;
@@ -196,8 +214,19 @@ public sealed class LogTailer : IDisposable
             into.Add(_partial.ToString());
             _partial.Clear();
 
-            // Treat \r\n as one break.
-            if (c == '\r' && i + 1 < span.Length && span[i + 1] == '\n') i++;
+            // Treat \r\n as one break, remembering a \r that ends the chunk.
+            if (c == '\r')
+            {
+                if (i + 1 < span.Length)
+                {
+                    if (span[i + 1] == '\n') i++;
+                }
+                else
+                {
+                    _pendingCr = true;
+                }
+            }
+
             start = i + 1;
         }
 

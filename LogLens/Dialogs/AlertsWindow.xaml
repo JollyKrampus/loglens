@@ -1,18 +1,22 @@
 <Window x:Class="LogLens.Dialogs.AlertsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:sys="clr-namespace:System;assembly=mscorlib"
         xmlns:m="clr-namespace:LogLens.Models"
         Title="Alerts" SizeToContent="Height" Width="600"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource App.Bg}">
 
     <Window.Resources>
-        <ObjectDataProvider x:Key="Severities" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
-            <ObjectDataProvider.MethodParameters>
-                <x:Type TypeName="m:Severity" />
-            </ObjectDataProvider.MethodParameters>
-        </ObjectDataProvider>
+        <!--
+          Only the levels that make sense as a threshold. Binding to every enum value
+          exposed None, Trace, Debug and Info — picking any of those made routine
+          traffic raise notifications.
+        -->
+        <x:Array x:Key="AlertLevels" Type="m:Severity">
+            <m:Severity>Warn</m:Severity>
+            <m:Severity>Error</m:Severity>
+            <m:Severity>Fatal</m:Severity>
+        </x:Array>
     </Window.Resources>
 
     <StackPanel Margin="18">
@@ -32,7 +36,7 @@
             </Grid.ColumnDefinitions>
             <Label Grid.Column="0" Content="Alert at this level or above" />
             <ComboBox Grid.Column="1" SelectedItem="{Binding MinimumSeverity}"
-                      ItemsSource="{Binding Source={StaticResource Severities}}" />
+                      ItemsSource="{Binding Source={StaticResource AlertLevels}}" />
         </Grid>
 
         <Grid Margin="0,0,0,4">

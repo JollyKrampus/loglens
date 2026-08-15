@@ -97,6 +97,12 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
     public FilterSpec Filter { get; }
     public BulkObservableCollection<LogLine> Display { get; } = new();
 
+    /// <summary>
+    /// The unfiltered buffer, so the merged view can rebuild itself from what the
+    /// file tabs already hold instead of forcing them to re-read from disk.
+    /// </summary>
+    public IReadOnlyList<LogLine> Buffer => All;
+
     /// <summary>Tab caption.</summary>
     public abstract string Header { get; }
 
