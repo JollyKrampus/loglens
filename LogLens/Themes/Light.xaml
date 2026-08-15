@@ -1,0 +1,40 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <SolidColorBrush x:Key="App.Bg"          Color="#F5F5F5" />
+    <SolidColorBrush x:Key="App.BgAlt"       Color="#EBEBEB" />
+    <SolidColorBrush x:Key="App.BgSunken"    Color="#E0E0E0" />
+    <SolidColorBrush x:Key="App.Border"      Color="#C6C6C6" />
+    <SolidColorBrush x:Key="App.Fg"          Color="#1A1A1A" />
+    <SolidColorBrush x:Key="App.FgDim"       Color="#565656" />
+    <SolidColorBrush x:Key="App.FgFaint"     Color="#8A8A8A" />
+    <SolidColorBrush x:Key="App.Accent"      Color="#1565C0" />
+    <SolidColorBrush x:Key="App.AccentDim"   Color="#90CAF9" />
+    <SolidColorBrush x:Key="App.Selection"   Color="#BBD9F7" />
+    <SolidColorBrush x:Key="App.Hover"       Color="#DCDCDC" />
+    <SolidColorBrush x:Key="App.LogBg"       Color="#FFFFFF" />
+    <SolidColorBrush x:Key="App.LogFg"       Color="#1A1A1A" />
+    <SolidColorBrush x:Key="App.Gutter"      Color="#F0F0F0" />
+    <SolidColorBrush x:Key="App.GutterFg"    Color="#9A9A9A" />
+    <SolidColorBrush x:Key="App.Danger"      Color="#C62828" />
+    <SolidColorBrush x:Key="App.Warn"        Color="#EF6C00" />
+    <SolidColorBrush x:Key="App.Ok"          Color="#2E7D32" />
+    <SolidColorBrush x:Key="App.FindHit"     Color="#FFE082" />
+
+    <!-- Same system-brush overrides as the dark theme, so both look intentional. -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}"           Color="#FFFFFF" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBarBrushKey}"        Color="#EBEBEB" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}"       Color="#1A1A1A" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}"        Color="#EBEBEB" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}"    Color="#1A1A1A" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}"   Color="#C6C6C6" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkBrushKey}"    Color="#C6C6C6" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}"         Color="#FFFFFF" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}"     Color="#1A1A1A" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"      Color="#BBD9F7" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"  Color="#1A1A1A" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}"       Color="#8A8A8A" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#DCE8F5" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1A1A1A" />
+
+</ResourceDictionary>

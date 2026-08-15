@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>LogLens</AssemblyName>
+    <RootNamespace>LogLens</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Regenerate with tools\New-AppIcon.ps1. Sets the exe, taskbar and window icon. -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>LogLens</Product>
+    <AssemblyTitle>LogLens - real-time log viewer</AssemblyTitle>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!--
+      WFAC010 is the WinForms analyser insisting DPI be set via ApplicationHighDpiMode.
+      This is a WPF app: the manifest is the correct place, and that property does not
+      apply. WinForms is only here for the colour and font pickers.
+    -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <!--
+      Do NOT set InvariantGlobalization. WPF's XmlLanguage.GetSpecificCulture()
+      needs real ICU culture data; without it every binding throws during layout.
+    -->
+  </PropertyGroup>
+
+  <!--
+    WinForms is referenced only for the standard colour and font pickers. Its
+    implicit usings collide with WPF (Brush, FontFamily, Timer, UserControl...),
+    so drop them and reference those two types by their full names instead.
+  -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,79 @@
+<Window x:Class="LogLens.Dialogs.AlertsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
+        xmlns:m="clr-namespace:LogLens.Models"
+        Title="Alerts" SizeToContent="Height" Width="600"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource App.Bg}">
+
+    <Window.Resources>
+        <ObjectDataProvider x:Key="Severities" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="m:Severity" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+    </Window.Resources>
+
+    <StackPanel Margin="18">
+
+        <CheckBox Content="Alert me when errors arrive" FontWeight="SemiBold"
+                  IsChecked="{Binding Enabled}" Margin="0,0,0,4" />
+        <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="0,0,0,14"
+                   Text="Each view can be muted separately under the Alerts menu, so you can watch prod without dev shouting at you." />
+
+        <TextBlock Text="WHEN" Style="{StaticResource SectionHeader}" Margin="0,0,0,8" />
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="130" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="Alert at this level or above" />
+            <ComboBox Grid.Column="1" SelectedItem="{Binding MinimumSeverity}"
+                      ItemsSource="{Binding Source={StaticResource Severities}}" />
+        </Grid>
+
+        <Grid Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="Also alert on this pattern" />
+            <TextBox Grid.Column="1" FontFamily="Consolas"
+                     Text="{Binding CustomPattern, UpdateSourceTrigger=LostFocus}" />
+        </Grid>
+        <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="200,0,0,14"
+                   Text="Optional regular expression. Matches at any level — useful for a specific error code or customer id. Leave blank to alert on severity only." />
+
+        <Grid Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="90" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="At most one alert every" />
+            <TextBox Grid.Column="1" Text="{Binding ThrottleSeconds, UpdateSourceTrigger=LostFocus}" />
+            <TextBlock Grid.Column="2" Text="seconds, per view" Style="{StaticResource Dim}"
+                       Margin="8,0,0,0" />
+        </Grid>
+        <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="200,0,0,14"
+                   Text="A service failing hard can produce thousands of errors a second. This is what stops that becoming thousands of notifications." />
+
+        <CheckBox Content="Only when LogLens is not the active window" Margin="0,0,0,14"
+                  IsChecked="{Binding OnlyWhenUnfocused}" />
+
+        <TextBlock Text="HOW" Style="{StaticResource SectionHeader}" Margin="0,0,0,8" />
+
+        <CheckBox Content="Show a notification" Margin="0,4" IsChecked="{Binding ShowToast}" />
+        <CheckBox Content="Play a sound" Margin="0,4" IsChecked="{Binding PlaySound}" />
+        <CheckBox Content="Flash the taskbar button" Margin="0,4" IsChecked="{Binding FlashTaskbar}" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Send test alert" Width="130" Margin="0,0,8,0" Click="Test_Click" />
+            <Button Content="Close" Width="88" IsDefault="True" IsCancel="True"
+                    Style="{StaticResource AccentButton}" />
+        </StackPanel>
+    </StackPanel>
+</Window>

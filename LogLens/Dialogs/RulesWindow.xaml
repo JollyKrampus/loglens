@@ -1,0 +1,178 @@
+<Window x:Class="LogLens.Dialogs.RulesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
+        xmlns:m="clr-namespace:LogLens.Models"
+        Title="Highlight rules" Height="620" Width="1080"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{DynamicResource App.Bg}">
+
+    <Window.Resources>
+        <ObjectDataProvider x:Key="Severities" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
+            <ObjectDataProvider.MethodParameters>
+                <x:Type TypeName="m:Severity" />
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+
+        <Style x:Key="RuleGrid" TargetType="DataGrid" BasedOn="{StaticResource {x:Type DataGrid}}">
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="RowHeight" Value="26" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="0,0,0,10"
+                   Text="Rules are checked top to bottom and the first match wins — keep FATAL above ERROR. View rules are checked before global ones, so a view can override a global rule." />
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TabControl x:Name="Scope" Grid.Column="0" Background="{DynamicResource App.Bg}">
+                <TabItem Header="Global rules (all views)">
+                    <DataGrid x:Name="GlobalGrid" Style="{StaticResource RuleGrid}" Margin="0,6,0,0">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="On" Width="38"
+                                Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" />
+                            <DataGridTextColumn Header="Name" Width="130" Binding="{Binding Name}" />
+                            <DataGridTextColumn Header="Pattern" Width="*"
+                                Binding="{Binding Pattern, UpdateSourceTrigger=LostFocus}"
+                                FontFamily="Consolas" />
+                            <DataGridCheckBoxColumn Header=".*" Width="34"
+                                Binding="{Binding IsRegex, UpdateSourceTrigger=PropertyChanged}" />
+                            <DataGridCheckBoxColumn Header="Aa" Width="34"
+                                Binding="{Binding CaseSensitive, UpdateSourceTrigger=PropertyChanged}" />
+                            <DataGridCheckBoxColumn Header="B" Width="30"
+                                Binding="{Binding Bold, UpdateSourceTrigger=PropertyChanged}" />
+                            <DataGridComboBoxColumn Header="Counts as" Width="90"
+                                SelectedItemBinding="{Binding Severity, UpdateSourceTrigger=PropertyChanged}"
+                                ItemsSource="{Binding Source={StaticResource Severities}}" />
+                            <DataGridTemplateColumn Header="Text" Width="86">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Click="PickForeground_Click" Padding="0" Margin="2"
+                                                Background="{Binding Foreground, Converter={StaticResource HexToBrush}}"
+                                                ToolTip="{Binding Foreground}" Content=" " />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Back" Width="86">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Click="PickBackground_Click" Padding="0" Margin="2"
+                                                Background="{Binding Background, Converter={StaticResource HexToBrush}}"
+                                                ToolTip="Click to choose a background, Shift+click to clear it." Content=" " />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Preview" Width="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding PreviewBackground, Converter={StaticResource NullToTransparent}}">
+                                            <TextBlock Text="sample line" FontFamily="Consolas" Margin="4,0"
+                                                       FontWeight="{Binding PreviewWeight}"
+                                                       Foreground="{Binding PreviewForeground, Converter={StaticResource InheritIfNull}}" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </TabItem>
+
+                <TabItem x:Name="ViewTab" Header="View rules">
+                    <DataGrid x:Name="ViewGrid" Style="{StaticResource RuleGrid}" Margin="0,6,0,0">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="On" Width="38"
+                                Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" />
+                            <DataGridTextColumn Header="Name" Width="130" Binding="{Binding Name}" />
+                            <DataGridTextColumn Header="Pattern" Width="*"
+                                Binding="{Binding Pattern, UpdateSourceTrigger=LostFocus}"
+                                FontFamily="Consolas" />
+                            <DataGridCheckBoxColumn Header=".*" Width="34"
+                                Binding="{Binding IsRegex, UpdateSourceTrigger=PropertyChanged}" />
+                            <DataGridCheckBoxColumn Header="Aa" Width="34"
+                                Binding="{Binding CaseSensitive, UpdateSourceTrigger=PropertyChanged}" />
+                            <DataGridCheckBoxColumn Header="B" Width="30"
+                                Binding="{Binding Bold, UpdateSourceTrigger=PropertyChanged}" />
+                            <DataGridComboBoxColumn Header="Counts as" Width="90"
+                                SelectedItemBinding="{Binding Severity, UpdateSourceTrigger=PropertyChanged}"
+                                ItemsSource="{Binding Source={StaticResource Severities}}" />
+                            <DataGridTemplateColumn Header="Text" Width="86">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Click="PickForeground_Click" Padding="0" Margin="2"
+                                                Background="{Binding Foreground, Converter={StaticResource HexToBrush}}"
+                                                ToolTip="{Binding Foreground}" Content=" " />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Back" Width="86">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Click="PickBackground_Click" Padding="0" Margin="2"
+                                                Background="{Binding Background, Converter={StaticResource HexToBrush}}"
+                                                ToolTip="Click to choose a background, Shift+click to clear it." Content=" " />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Preview" Width="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding PreviewBackground, Converter={StaticResource NullToTransparent}}">
+                                            <TextBlock Text="sample line" FontFamily="Consolas" Margin="4,0"
+                                                       FontWeight="{Binding PreviewWeight}"
+                                                       Foreground="{Binding PreviewForeground, Converter={StaticResource InheritIfNull}}" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </TabItem>
+            </TabControl>
+
+            <StackPanel Grid.Column="1" Margin="10,32,0,0" Width="130">
+                <Button Content="Add rule" Margin="0,0,0,6" Click="Add_Click" />
+                <Button Content="Duplicate" Margin="0,0,0,6" Click="Duplicate_Click" />
+                <Button Content="Delete" Margin="0,0,0,14" Click="Delete_Click" />
+                <Button Content="Move up" Margin="0,0,0,6" Click="Up_Click" />
+                <Button Content="Move down" Margin="0,0,0,14" Click="Down_Click" />
+                <Button Content="Load preset…" Click="Presets_Click"
+                        ToolTip="Replace the rules on this tab with a set tuned for a known log format." />
+            </StackPanel>
+        </Grid>
+
+        <!-- live tester -->
+        <Border Grid.Row="2" Margin="0,12,0,0" Padding="10" CornerRadius="4"
+                Background="{DynamicResource App.BgAlt}"
+                BorderBrush="{DynamicResource App.Border}" BorderThickness="1">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Text="Try a line" Style="{StaticResource Dim}"
+                           Margin="0,0,8,0" />
+                <TextBlock x:Name="TestResult" DockPanel.Dock="Right" Margin="10,0,0,0"
+                           MinWidth="220" FontFamily="Consolas" />
+                <TextBox x:Name="TestBox" FontFamily="Consolas" TextChanged="TestBox_TextChanged" />
+            </DockPanel>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Cancel" Width="88" Margin="0,0,8,0" IsCancel="True" />
+            <Button Content="OK" Width="88" IsDefault="True" Style="{StaticResource AccentButton}"
+                    Click="Ok_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

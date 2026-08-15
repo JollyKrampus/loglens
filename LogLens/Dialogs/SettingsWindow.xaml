@@ -1,0 +1,97 @@
+<Window x:Class="LogLens.Dialogs.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" SizeToContent="Height" Width="560"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource App.Bg}">
+
+    <StackPanel Margin="18">
+
+        <TextBlock Text="TAILING" Style="{StaticResource SectionHeader}" Margin="0,0,0,8" />
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="Check for new lines every" />
+            <TextBox Grid.Column="1" Text="{Binding PollIntervalMs, UpdateSourceTrigger=LostFocus}" />
+            <TextBlock Grid.Column="2" Text="ms — lower is snappier, higher is kinder to network shares"
+                       Style="{StaticResource Dim}" Margin="8,0,0,0" TextWrapping="Wrap" />
+        </Grid>
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="Load at most" />
+            <TextBox Grid.Column="1" Text="{Binding InitialTailKb, UpdateSourceTrigger=LostFocus}" />
+            <TextBlock Grid.Column="2" Text="KB when opening a file — 0 loads the whole thing"
+                       Style="{StaticResource Dim}" Margin="8,0,0,0" TextWrapping="Wrap" />
+        </Grid>
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="Keep at most" />
+            <TextBox Grid.Column="1" Text="{Binding MaxLines, UpdateSourceTrigger=LostFocus}" />
+            <TextBlock Grid.Column="2" Text="lines per tab — the oldest drop off the top"
+                       Style="{StaticResource Dim}" Margin="8,0,0,0" TextWrapping="Wrap" />
+        </Grid>
+
+        <Grid Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="Merged timeline delay" />
+            <TextBox Grid.Column="1" Text="{Binding MergeWindowMs, UpdateSourceTrigger=LostFocus}" />
+            <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource Dim}" Margin="8,0,0,0" />
+        </Grid>
+        <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="180,0,0,10"
+                   Text="How long the merged view holds a line so slower files can deliver older lines first. Raise it if the merged tab reports late batches." />
+
+        <TextBlock Text="APPEARANCE" Style="{StaticResource SectionHeader}" Margin="0,10,0,8" />
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="Log font" />
+            <TextBox Grid.Column="1" x:Name="FontBox" Margin="0,0,6,0"
+                     Text="{Binding FontFamily, UpdateSourceTrigger=LostFocus}" />
+            <Button Grid.Column="2" Content="Pick…" Click="PickFont_Click" />
+        </Grid>
+
+        <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="100" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Label Grid.Column="0" Content="Log font size" />
+            <TextBox Grid.Column="1" Text="{Binding FontSize, UpdateSourceTrigger=LostFocus}" />
+        </Grid>
+
+        <CheckBox Content="Show line numbers" Margin="0,4" IsChecked="{Binding ShowLineNumbers}" />
+        <CheckBox Content="Word wrap" Margin="0,4" IsChecked="{Binding WordWrap}" />
+        <CheckBox Content="Light theme" Margin="0,4" IsChecked="{Binding LightTheme}" />
+
+        <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="0,16,0,0"
+                   Text="Settings are stored in the workspace file, so a workspace carries its own look and tailing behaviour." />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Content="Close" Width="88" IsDefault="True" IsCancel="True"
+                    Style="{StaticResource AccentButton}" />
+        </StackPanel>
+    </StackPanel>
+</Window>

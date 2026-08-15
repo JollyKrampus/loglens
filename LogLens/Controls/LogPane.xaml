@@ -1,0 +1,211 @@
+<UserControl x:Class="LogLens.Controls.LogPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:LogLens.Controls"
+             Background="{DynamicResource App.Bg}">
+
+    <UserControl.Resources>
+
+        <!-- The row container carries the highlight background; the template carries the text. -->
+        <Style x:Key="LogItemStyle" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Background"
+                    Value="{Binding Background, Converter={StaticResource NullToTransparent}}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="B" Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="B" Property="Background"
+                                        Value="{DynamicResource App.Selection}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ toolbar ============ -->
+        <Border Grid.Row="0" Background="{DynamicResource App.BgAlt}"
+                BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1" Padding="6,4">
+            <!--
+              Star-sized filter boxes rather than fixed widths: on a narrow window the
+              boxes shrink instead of pushing the toggles and Find button off the edge.
+            -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" MinWidth="70" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" MinWidth="70" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,10,0">
+                    <ToggleButton Content="Follow" Margin="0,0,4,0"
+                                  IsChecked="{Binding FollowTail, Mode=TwoWay}"
+                                  ToolTip="Auto-scroll as new lines arrive. Scrolling up turns this off; scrolling back to the bottom turns it on." />
+                    <ToggleButton Content="Pause" Margin="0,0,4,0"
+                                  IsChecked="{Binding Paused, Mode=TwoWay}"
+                                  ToolTip="Hold incoming lines without losing them." />
+                    <Button Content="Clear" Margin="0,0,4,0" Click="Clear_Click"
+                            ToolTip="Clear the on-screen buffer. The file is untouched." />
+                    <Button Content="Reload" Click="Reload_Click"
+                            ToolTip="Re-read the file from disk." />
+                </StackPanel>
+
+                <TextBlock Grid.Column="1" Text="Show" Style="{StaticResource Dim}" Margin="0,0,5,0" />
+                <TextBox Grid.Column="2" Margin="0,0,10,0"
+                         Text="{Binding Filter.Include, UpdateSourceTrigger=PropertyChanged, Delay=250}"
+                         ToolTip="Only show lines matching this. Blank shows everything." />
+
+                <TextBlock Grid.Column="3" Text="Hide" Style="{StaticResource Dim}" Margin="0,0,5,0" />
+                <TextBox Grid.Column="4" Margin="0,0,6,0"
+                         Text="{Binding Filter.Exclude, UpdateSourceTrigger=PropertyChanged, Delay=250}"
+                         ToolTip="Drop lines matching this." />
+
+                <StackPanel Grid.Column="5" Orientation="Horizontal">
+                    <TextBlock Text="!" FontWeight="Bold" Margin="0,0,6,0"
+                               Foreground="{DynamicResource App.Danger}"
+                               ToolTip="{Binding FilterError}"
+                               Visibility="{Binding FilterError, Converter={StaticResource NonEmptyToVis}}" />
+                    <ToggleButton Content=".*" Margin="0,0,3,0" Padding="6,3"
+                                  IsChecked="{Binding Filter.IsRegex, Mode=TwoWay}"
+                                  ToolTip="Treat the filters as regular expressions." />
+                    <ToggleButton Content="Aa" Margin="0,0,10,0" Padding="6,3"
+                                  IsChecked="{Binding Filter.CaseSensitive, Mode=TwoWay}"
+                                  ToolTip="Case-sensitive filtering." />
+                    <Button Content="Find" Click="ShowFind_Click"
+                            ToolTip="Find in this tab (Ctrl+F)." />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ============ find bar ============ -->
+        <Border x:Name="FindBar" Grid.Row="1" Background="{DynamicResource App.BgAlt}"
+                BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1"
+                Padding="6,4" Visibility="Collapsed">
+            <DockPanel>
+                <TextBlock Text="Find" Style="{StaticResource Dim}" Margin="0,0,6,0" DockPanel.Dock="Left" />
+                <TextBox x:Name="FindBox" Width="260" DockPanel.Dock="Left" Margin="0,0,6,0"
+                         KeyDown="FindBox_KeyDown" TextChanged="FindBox_TextChanged" />
+                <ToggleButton x:Name="FindRegex" Content=".*" DockPanel.Dock="Left" Margin="0,0,3,0"
+                              Padding="6,3" Click="FindOptionChanged" ToolTip="Regular expression" />
+                <ToggleButton x:Name="FindCase" Content="Aa" DockPanel.Dock="Left" Margin="0,0,8,0"
+                              Padding="6,3" Click="FindOptionChanged" ToolTip="Match case" />
+                <Button Content="Previous" DockPanel.Dock="Left" Margin="0,0,4,0" Click="FindPrev_Click" />
+                <Button Content="Next" DockPanel.Dock="Left" Margin="0,0,8,0" Click="FindNext_Click" />
+                <Button Content="Close" DockPanel.Dock="Right" Click="HideFind_Click" />
+                <TextBlock x:Name="FindStatus" Style="{StaticResource Dim}" Margin="4,0" />
+            </DockPanel>
+        </Border>
+
+        <!-- ============ the log ============ -->
+        <ListBox x:Name="Lines" Grid.Row="2"
+                 ItemsSource="{Binding Display}"
+                 ItemContainerStyle="{StaticResource LogItemStyle}"
+                 Background="{DynamicResource App.LogBg}"
+                 BorderThickness="0"
+                 SelectionMode="Extended"
+                 VirtualizingPanel.IsVirtualizing="True"
+                 VirtualizingPanel.VirtualizationMode="Recycling"
+                 VirtualizingPanel.ScrollUnit="Pixel"
+                 ScrollViewer.HorizontalScrollBarVisibility="{Binding WordWrap, RelativeSource={RelativeSource AncestorType=local:LogPane}, Converter={StaticResource WrapToHScroll}}"
+                 ScrollViewer.VerticalScrollBarVisibility="Visible">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Left"
+                                   Text="{Binding Number}"
+                                   Width="58" TextAlignment="Right" Margin="0,0,10,0"
+                                   Foreground="{DynamicResource App.GutterFg}"
+                                   FontFamily="{Binding LogFontFamily, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
+                                   FontSize="{Binding LogFontSize, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
+                                   Visibility="{Binding ShowLineNumbers, RelativeSource={RelativeSource AncestorType=local:LogPane}, Converter={StaticResource BoolToVis}}" />
+
+                        <!-- Which file a line came from. Merged timeline only. -->
+                        <TextBlock DockPanel.Dock="Left"
+                                   Text="{Binding SourceName}"
+                                   Width="130" Margin="0,0,10,0"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding SourceName}"
+                                   Foreground="{Binding SourceBrush, Converter={StaticResource InheritIfNull}}"
+                                   FontFamily="{Binding LogFontFamily, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
+                                   FontSize="{Binding LogFontSize, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
+                                   Visibility="{Binding DataContext.ShowsSourceColumn, RelativeSource={RelativeSource AncestorType=local:LogPane}, Converter={StaticResource BoolToVis}}" />
+
+                        <TextBlock Text="{Binding Text}"
+                                   Foreground="{Binding Foreground, Converter={StaticResource InheritIfNull}}"
+                                   FontWeight="{Binding Weight}"
+                                   FontFamily="{Binding LogFontFamily, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
+                                   FontSize="{Binding LogFontSize, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
+                                   TextWrapping="{Binding WordWrap, RelativeSource={RelativeSource AncestorType=local:LogPane}, Converter={StaticResource BoolToWrap}}" />
+                    </DockPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+
+            <ListBox.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Copy selected lines" Click="Copy_Click" InputGestureText="Ctrl+C" />
+                    <MenuItem Header="Copy selected without line numbers" Click="CopyRaw_Click" />
+                    <Separator />
+                    <MenuItem Header="Select all" Click="SelectAll_Click" InputGestureText="Ctrl+A" />
+                    <Separator />
+                    <MenuItem Header="Filter to lines like this" Click="FilterToSelection_Click" />
+                    <MenuItem Header="Clear filters" Click="ClearFilters_Click" />
+                </ContextMenu>
+            </ListBox.ContextMenu>
+        </ListBox>
+
+        <!-- ============ status ============ -->
+        <Border Grid.Row="3" Background="{DynamicResource App.BgAlt}"
+                BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="8,3">
+            <DockPanel>
+                <TextBlock Text="{Binding CountsSummary}" Style="{StaticResource Dim}" DockPanel.Dock="Left" />
+
+                <TextBlock Style="{StaticResource Dim}" Margin="14,0,0,0" DockPanel.Dock="Left"
+                           Foreground="{DynamicResource App.Danger}"
+                           Visibility="{Binding FatalCount, Converter={StaticResource PositiveToVis}}">
+                    <Run Text="FATAL" /><Run Text=" " /><Run Text="{Binding FatalCount, Mode=OneWay, StringFormat=N0}" />
+                </TextBlock>
+
+                <TextBlock Style="{StaticResource Dim}" Margin="12,0,0,0" DockPanel.Dock="Left"
+                           Foreground="{DynamicResource App.Danger}"
+                           Visibility="{Binding ErrorCount, Converter={StaticResource PositiveToVis}}">
+                    <Run Text="ERR" /><Run Text=" " /><Run Text="{Binding ErrorCount, Mode=OneWay, StringFormat=N0}" />
+                </TextBlock>
+
+                <TextBlock Style="{StaticResource Dim}" Margin="12,0,0,0" DockPanel.Dock="Left"
+                           Foreground="{DynamicResource App.Warn}"
+                           Visibility="{Binding WarnCount, Converter={StaticResource PositiveToVis}}">
+                    <Run Text="WARN" /><Run Text=" " /><Run Text="{Binding WarnCount, Mode=OneWay, StringFormat=N0}" />
+                </TextBlock>
+
+                <TextBlock Text="{Binding Status}" DockPanel.Dock="Right"
+                           Foreground="{DynamicResource App.Danger}"
+                           TextTrimming="CharacterEllipsis"
+                           Visibility="{Binding Status, Converter={StaticResource NonEmptyToVis}}" />
+
+                <TextBlock Text="{Binding PathSpec}" Style="{StaticResource Dim}"
+                           Margin="18,0,0,0" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding PathSpec}" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

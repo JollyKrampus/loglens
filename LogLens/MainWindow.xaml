@@ -1,0 +1,244 @@
+<Window x:Class="LogLens.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctrl="clr-namespace:LogLens.Controls"
+        Title="{Binding Title}" Height="760" Width="1280"
+        MinHeight="380" MinWidth="720"
+        AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver"
+        Background="{DynamicResource App.Bg}">
+
+    <Window.InputBindings>
+        <KeyBinding Key="F" Modifiers="Ctrl" Command="Find" />
+        <KeyBinding Key="S" Modifiers="Ctrl" Command="Save" />
+        <KeyBinding Key="O" Modifiers="Ctrl" Command="Open" />
+    </Window.InputBindings>
+
+    <DockPanel>
+
+        <!-- ================= menu ================= -->
+        <Menu DockPanel.Dock="Top" Padding="4,2">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New workspace" Click="NewWorkspace_Click" />
+                <MenuItem Header="_Open workspace…" Click="OpenWorkspace_Click" InputGestureText="Ctrl+O" />
+                <Separator />
+                <MenuItem Header="_Save workspace" Click="SaveWorkspace_Click" InputGestureText="Ctrl+S" />
+                <MenuItem Header="Save workspace _as…" Click="SaveWorkspaceAs_Click" />
+                <Separator />
+                <MenuItem Header="Open workspace _folder" Click="OpenFolder_Click" />
+                <Separator />
+                <MenuItem Header="E_xit" Click="Exit_Click" />
+            </MenuItem>
+
+            <MenuItem Header="_View">
+                <MenuItem Header="_Add view…" Click="AddView_Click" />
+                <MenuItem Header="_Edit current view…" Click="EditView_Click" />
+                <MenuItem Header="_Duplicate current view" Click="DuplicateView_Click" />
+                <MenuItem Header="_Remove current view" Click="RemoveView_Click" />
+                <Separator />
+                <MenuItem Header="Move _up" Click="MoveViewUp_Click" />
+                <MenuItem Header="Move _down" Click="MoveViewDown_Click" />
+            </MenuItem>
+
+            <MenuItem Header="_Files">
+                <MenuItem Header="_Add log file(s)…" Click="AddFiles_Click" />
+                <MenuItem Header="Add _wildcard path…" Click="AddWildcard_Click" />
+                <Separator />
+                <MenuItem Header="_Rename current tab…" Click="RenameTab_Click" />
+                <MenuItem Header="_Close current tab" Click="CloseTab_Click" />
+                <Separator />
+                <MenuItem Header="Reload _all tabs in view" Click="ReloadAll_Click" />
+                <MenuItem Header="Clear all _buffers in view" Click="ClearAll_Click" />
+                <Separator />
+                <MenuItem Header="Merged _timeline for this view" IsCheckable="True"
+                          IsChecked="{Binding SelectedView.Def.ShowMergedTimeline, Mode=TwoWay}"
+                          ToolTip="Adds a tab interleaving every file in this view by timestamp." />
+            </MenuItem>
+
+            <MenuItem Header="_Alerts">
+                <MenuItem Header="_Enable alerts" IsCheckable="True"
+                          IsChecked="{Binding Alerts.Enabled, Mode=TwoWay}" />
+                <MenuItem Header="Alerts for _this view" IsCheckable="True"
+                          IsChecked="{Binding SelectedView.Def.AlertsEnabled, Mode=TwoWay}"
+                          ToolTip="Mute dev and test while staying alert to prod." />
+                <Separator />
+                <MenuItem Header="Show _notification" IsCheckable="True"
+                          IsChecked="{Binding Alerts.ShowToast, Mode=TwoWay}" />
+                <MenuItem Header="Play _sound" IsCheckable="True"
+                          IsChecked="{Binding Alerts.PlaySound, Mode=TwoWay}" />
+                <MenuItem Header="_Flash the taskbar" IsCheckable="True"
+                          IsChecked="{Binding Alerts.FlashTaskbar, Mode=TwoWay}" />
+                <MenuItem Header="Only when LogLens is not in front" IsCheckable="True"
+                          IsChecked="{Binding Alerts.OnlyWhenUnfocused, Mode=TwoWay}" />
+                <Separator />
+                <MenuItem Header="Alert se_ttings…" Click="AlertSettings_Click" />
+                <MenuItem Header="Send a t_est alert" Click="TestAlert_Click" />
+            </MenuItem>
+
+            <MenuItem Header="_Tools">
+                <MenuItem Header="_Highlight rules…" Click="Rules_Click" />
+                <MenuItem Header="_Settings…" Click="Settings_Click" />
+                <Separator />
+                <MenuItem Header="_Word wrap" IsCheckable="True"
+                          IsChecked="{Binding Settings.WordWrap, Mode=TwoWay}" />
+                <MenuItem Header="Line _numbers" IsCheckable="True"
+                          IsChecked="{Binding Settings.ShowLineNumbers, Mode=TwoWay}" />
+                <MenuItem Header="_Light theme" IsCheckable="True"
+                          IsChecked="{Binding Settings.LightTheme, Mode=TwoWay}" />
+            </MenuItem>
+
+            <MenuItem Header="_Help">
+                <MenuItem Header="_Shortcuts and tips" Click="Help_Click" />
+                <MenuItem Header="_About" Click="About_Click" />
+            </MenuItem>
+        </Menu>
+
+        <!-- ================= status bar ================= -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource App.BgAlt}"
+                BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="8,3">
+            <DockPanel>
+                <TextBlock Text="{Binding WorkspacePath}" Style="{StaticResource Dim}"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding WorkspacePath}" />
+                <TextBlock x:Name="Toast" DockPanel.Dock="Right" Style="{StaticResource Dim}" />
+            </DockPanel>
+        </Border>
+
+        <!-- ================= body ================= -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="210" MinWidth="150" />
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="*" MinWidth="360" />
+            </Grid.ColumnDefinitions>
+
+            <!-- sidebar: the saved views -->
+            <Border Grid.Column="0" Background="{DynamicResource App.BgAlt}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="VIEWS" Style="{StaticResource SectionHeader}" />
+
+                    <Border DockPanel.Dock="Bottom" Padding="8,6" BorderThickness="0,1,0,0"
+                            BorderBrush="{DynamicResource App.Border}">
+                        <UniformGrid Columns="3">
+                            <Button Content="Add" Margin="0,0,3,0" Click="AddView_Click" ToolTip="New view" />
+                            <Button Content="Edit" Margin="0,0,3,0" Click="EditView_Click" ToolTip="Edit this view" />
+                            <Button Content="Del" Click="RemoveView_Click" ToolTip="Remove this view" />
+                        </UniformGrid>
+                    </Border>
+
+                    <ListBox ItemsSource="{Binding Views}" SelectedItem="{Binding SelectedView, Mode=TwoWay}"
+                             Background="Transparent" BorderThickness="0"
+                             HorizontalContentAlignment="Stretch"
+                             MouseDoubleClick="ViewList_DoubleClick">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border x:Name="B" Background="Transparent" Padding="0">
+                                                <ContentPresenter />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="B" Property="Background"
+                                                            Value="{DynamicResource App.Hover}" />
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="B" Property="Background"
+                                                            Value="{DynamicResource App.Selection}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Height="30">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="4" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- accent stripe: prod should never be mistaken for dev -->
+                                    <Rectangle Grid.Column="0" Fill="{Binding AccentBrush}" />
+
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="10,0,4,0"
+                                               TextTrimming="CharacterEllipsis" />
+
+                                    <Border Grid.Column="2" Margin="0,0,8,0" CornerRadius="8"
+                                            Background="{DynamicResource App.Danger}" Padding="6,1"
+                                            VerticalAlignment="Center"
+                                            Visibility="{Binding ErrorTotal, Converter={StaticResource PositiveToVis}}">
+                                        <TextBlock Text="{Binding ErrorTotal, StringFormat=N0}"
+                                                   Foreground="White" FontSize="10" FontWeight="Bold" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                          Background="{DynamicResource App.Border}" />
+
+            <!-- main: tabs for the files in the selected view -->
+            <Grid Grid.Column="2">
+
+                <TextBlock Text="No views yet. Use View ▸ Add view to make one."
+                           Style="{StaticResource Dim}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="{Binding HasView, Converter={StaticResource BoolToVisInv}}" />
+
+                <Grid Visibility="{Binding HasView, Converter={StaticResource BoolToVis}}">
+
+                        <TabControl ItemsSource="{Binding SelectedView.Tabs}"
+                                    SelectedItem="{Binding SelectedView.SelectedTab, Mode=TwoWay}"
+                                    Visibility="{Binding SelectedView.Tabs.Count, Converter={StaticResource PositiveToVis}}">
+                            <TabControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="7" Height="7" Margin="0,0,6,0"
+                                                 Fill="{DynamicResource App.Danger}"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding HasAlert, Converter={StaticResource BoolToVis}}"
+                                                 ToolTip="New errors arrived while you were on another tab" />
+                                        <Ellipse Width="7" Height="7" Margin="0,0,6,0"
+                                                 Fill="{DynamicResource App.Warn}"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
+                                                 ToolTip="{Binding Status}" />
+                                        <TextBlock Text="{Binding Header}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </TabControl.ItemTemplate>
+
+                            <TabControl.ContentTemplate>
+                                <DataTemplate>
+                                    <ctrl:LogPane
+                                        WordWrap="{Binding DataContext.Settings.WordWrap, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        ShowLineNumbers="{Binding DataContext.Settings.ShowLineNumbers, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        LogFontSize="{Binding DataContext.Settings.FontSize, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        LogFontFamily="{Binding DataContext.Settings.FontFamily, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource StringToFontFamily}}" />
+                                </DataTemplate>
+                            </TabControl.ContentTemplate>
+                        </TabControl>
+
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                                Visibility="{Binding SelectedView.Tabs.Count, Converter={StaticResource ZeroToVis}}">
+                        <TextBlock Text="This view has no log files yet." Style="{StaticResource Dim}"
+                                   HorizontalAlignment="Center" Margin="0,0,0,10" />
+                        <TextBlock Text="Drag log files onto the window, or use Files ▸ Add log file(s)."
+                                   Style="{StaticResource Dim}" HorizontalAlignment="Center" Margin="0,0,0,14" />
+                        <Button Content="Add log file(s)…" Style="{StaticResource AccentButton}"
+                                HorizontalAlignment="Center" Padding="14,6" Click="AddFiles_Click" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -1,0 +1,83 @@
+<Window x:Class="LogLens.Dialogs.ViewEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit view" Height="520" Width="720"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{DynamicResource App.Bg}">
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- name + accent -->
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Label Grid.Column="0" Content="View name" />
+            <TextBox Grid.Column="1" x:Name="NameBox" Margin="0,0,16,0" />
+
+            <Label Grid.Column="2" Content="Colour" />
+            <Border Grid.Column="3" Width="30" Height="22" CornerRadius="3" Margin="0,0,6,0"
+                    BorderBrush="{DynamicResource App.Border}" BorderThickness="1"
+                    Background="{Binding Text, ElementName=AccentBox, Converter={StaticResource HexToBrush}}" />
+            <StackPanel Grid.Column="4" Orientation="Horizontal">
+                <TextBox x:Name="AccentBox" Width="88" FontFamily="Consolas" Margin="0,0,6,0" />
+                <Button Content="Pick…" Click="PickAccent_Click" />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="1" Style="{StaticResource Dim}" Margin="0,0,0,6"
+                   Text="Log files in this view. A path may contain * or ? to follow rolling files." />
+
+        <!-- sources -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ListBox x:Name="SourceList" Grid.Column="0"
+                     Background="{DynamicResource App.BgSunken}"
+                     BorderBrush="{DynamicResource App.Border}" BorderThickness="1"
+                     HorizontalContentAlignment="Stretch"
+                     MouseDoubleClick="EditSource_Click">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="4,3">
+                            <TextBlock Text="{Binding Name}" />
+                            <TextBlock Text="{Binding Path}" Style="{StaticResource Dim}"
+                                       FontFamily="Consolas" FontSize="11"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <StackPanel Grid.Column="1" Margin="10,0,0,0" Width="120">
+                <Button Content="Add files…" Margin="0,0,0,6" Click="AddFiles_Click" />
+                <Button Content="Add wildcard…" Margin="0,0,0,6" Click="AddWildcard_Click" />
+                <Button Content="Edit…" Margin="0,0,0,6" Click="EditSource_Click" />
+                <Button Content="Rename…" Margin="0,0,0,6" Click="RenameSource_Click" />
+                <Button Content="Remove" Margin="0,0,0,14" Click="RemoveSource_Click" />
+                <Button Content="Move up" Margin="0,0,0,6" Click="MoveUp_Click" />
+                <Button Content="Move down" Click="MoveDown_Click" />
+            </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Cancel" Width="88" Margin="0,0,8,0" IsCancel="True" />
+            <Button Content="OK" Width="88" IsDefault="True" Style="{StaticResource AccentButton}"
+                    Click="Ok_Click" />
+        </StackPanel>
+    </Grid>
+</Window>
