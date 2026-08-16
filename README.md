@@ -14,6 +14,35 @@ No installer, no service, no account, no telemetry, no licence.
 Built binaries are on the [releases page](https://github.com/JollyKrampus/loglens/releases) —
 download `LogLens.exe` and run it. Nothing to install.
 
+### Windows will warn you the first time
+
+Windows tags anything downloaded from a browser with the *Mark of the Web*, and
+SmartScreen warns about executables it has no reputation for. It is not claiming the
+file is malicious — it is saying nobody has vouched for it. An unsigned, 64 MB,
+self-extracting binary is a worst case for those heuristics.
+
+Clear it in one line:
+
+```bash
+Unblock-File .\LogLens.exe
+```
+
+Or right-click the file → Properties → tick **Unblock**.
+
+To confirm the download is exactly what CI built, compare it against `SHA256SUMS.txt`
+on the same release:
+
+```bash
+Get-FileHash .\LogLens.exe -Algorithm SHA256
+```
+
+Silencing the warning properly needs Authenticode code signing. The only cheap route
+is [Azure Artifact Signing](https://azure.microsoft.com/en-us/pricing/details/trusted-signing/)
+(formerly Trusted Signing) at about $10/month, which has an official GitHub Action and
+would slot into the release job. A traditional OV certificate runs $200–600/year and,
+since June 2023, requires the key on FIPS 140-2 Level 2 hardware. Neither is worth it
+while this is a private repo with one user; revisit if it ever goes public.
+
 ### Cutting a new one
 
 ```bash

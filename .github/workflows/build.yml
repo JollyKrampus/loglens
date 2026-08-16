@@ -42,12 +42,26 @@ jobs:
         run: ./build.ps1
         shell: pwsh
 
+      # Lets anyone confirm the download matches what CI actually produced. It does
+      # not stop the SmartScreen warning — only code signing does that — but it is
+      # the free half of vouching for a binary.
+      - name: Checksum
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $exe = 'dist/SelfContained/LogLens.exe'
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  LogLens.exe" | Out-File 'dist/SelfContained/SHA256SUMS.txt' -Encoding ascii
+          Write-Host "SHA256: $hash"
+
       - name: Upload portable exe
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           name: LogLens-portable-win-x64
-          path: dist/SelfContained/LogLens.exe
+          path: |
+            dist/SelfContained/LogLens.exe
+            dist/SelfContained/SHA256SUMS.txt
           if-no-files-found: error
           # Short retention: a tagged build is kept on the release itself, and
           # release assets do not count against the Actions storage quota.
@@ -68,7 +82,9 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
-          files: LogLens.exe
+          files: |
+            LogLens.exe
+            SHA256SUMS.txt
           generate_release_notes: true
           draft: false
           fail_on_unmatched_files: true
