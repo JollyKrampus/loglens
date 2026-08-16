@@ -9,6 +9,39 @@ No installer, no service, no account, no telemetry, no licence.
 
 ---
 
+## Releases
+
+Built binaries are on the [releases page](https://github.com/JollyKrampus/loglens/releases) —
+download `LogLens.exe` and run it. Nothing to install.
+
+### Cutting a new one
+
+```bash
+git tag -a v1.2.0 -m "what changed" && git push origin v1.2.0
+```
+
+That's it. CI builds it, runs the checks, and publishes a release with the exe
+attached and generated notes. Bump `<Version>` in `LogLens/LogLens.csproj` to match
+before tagging — the About box reads it from the assembly.
+
+### What CI does, and why it's shaped that way
+
+Every push and pull request builds with warnings-as-errors and runs
+`tests/RuleCheck`. Only **tags and manual runs** produce the portable exe.
+
+That split is deliberate, for a free GitHub account:
+
+- Windows runners are required (WPF will not build on Linux) and bill at **2× minutes**
+  against the free 2,000/month. A run is ~2 minutes, so ~4 billed — roughly 500
+  pushes a month. Not a constraint.
+- **Artifact storage is the real limit**: 500 MB free, and the exe is ~58 MB. Uploading
+  it on every push filled 115 MB in two builds. Release assets don't count against
+  that quota, which is why tagged builds keep it on the release instead.
+
+Need a one-off binary without tagging? Actions tab → **build** → *Run workflow*.
+
+---
+
 ## Getting it running
 
 ```powershell
