@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using LogLens.Services;
 using LogLens.ViewModels;
 
 namespace LogLens.Controls;
@@ -159,6 +160,30 @@ public partial class LogPane : UserControl
 
     private void Reload_Click(object sender, RoutedEventArgs e) => _tab?.ReloadFromDisk();
 
+    // Resolve + launch run off the UI thread: both touch the file system, and for a
+    // tab tailing an unreachable UNC share that means blocking for the full SMB
+    // connect timeout — long enough to take the whole window to "not responding".
+
+    private async void OpenInEditor_Click(object sender, RoutedEventArgs e)
+    {
+        if (_tab is null || !_tab.SupportsOpenInEditor) return;
+        var tab = _tab;
+
+        var error = await Task.Run(() => ShellOpen.OpenInEditor(tab.ResolvedFilePath));
+        if (error is not null)
+            MessageBox.Show(error, "LogLens", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private async void RevealInExplorer_Click(object sender, RoutedEventArgs e)
+    {
+        if (_tab is null || !_tab.SupportsOpenInEditor) return;
+        var tab = _tab;
+
+        var error = await Task.Run(() => ShellOpen.RevealInExplorer(tab.ResolvedFilePath));
+        if (error is not null)
+            MessageBox.Show(error, "LogLens", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
     private void ShowFind_Click(object sender, RoutedEventArgs e) => ShowFind();
 
     private void HideFind_Click(object sender, RoutedEventArgs e)
@@ -302,9 +327,5 @@ public partial class LogPane : UserControl
     }
 
     private void ClearFilters_Click(object sender, RoutedEventArgs e)
-    {
-        if (_tab is null) return;
-        _tab.Filter.Include = "";
-        _tab.Filter.Exclude = "";
-    }
+        => _tab?.ClearAllFilters();
 }

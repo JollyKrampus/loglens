@@ -79,6 +79,9 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
     private FilterMatcher _matcher;
     protected RuleSet Rules = RuleSet.Empty;
 
+    private SeverityClasses _severityMask = SeverityClasses.All;
+    private readonly SeverityCarryMap _severityCarry = new();
+
     private bool _followTail = true;
     private bool _paused;
     private bool _isActive;
@@ -111,6 +114,12 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
 
     /// <summary>True for the merged timeline, which shows a source column instead of line numbers.</summary>
     public virtual bool ShowsSourceColumn => false;
+
+    /// <summary>The concrete file behind this pane right now, when there is exactly one.</summary>
+    public virtual string? ResolvedFilePath => null;
+
+    /// <summary>False for panes that aggregate several files, like the merged timeline.</summary>
+    public virtual bool SupportsOpenInEditor => false;
 
     public string? Status { get => _status; protected set => Set(ref _status, value); }
     public string? FilterError { get => _filterError; private set => Set(ref _filterError, value); }
@@ -152,6 +161,30 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
 
     public bool HasAlert => _alertCount > 0;
 
+    // ---- severity chips ---------------------------------------------------------
+    // One bindable bool per chip, all writing into a single flags mask. Any change
+    // rebuilds the display; unclassified lines (stack traces) follow the line above.
+
+    public bool ShowFatal { get => _severityMask.HasFlag(SeverityClasses.Fatal); set => SetSeverity(SeverityClasses.Fatal, value); }
+    public bool ShowError { get => _severityMask.HasFlag(SeverityClasses.Error); set => SetSeverity(SeverityClasses.Error, value); }
+    public bool ShowWarn  { get => _severityMask.HasFlag(SeverityClasses.Warn);  set => SetSeverity(SeverityClasses.Warn, value); }
+    public bool ShowInfo  { get => _severityMask.HasFlag(SeverityClasses.Info);  set => SetSeverity(SeverityClasses.Info, value); }
+    public bool ShowDebug { get => _severityMask.HasFlag(SeverityClasses.Debug); set => SetSeverity(SeverityClasses.Debug, value); }
+
+    private void SetSeverity(SeverityClasses cls, bool on)
+    {
+        var next = on ? _severityMask | cls : _severityMask & ~cls;
+        if (next == _severityMask) return;
+        _severityMask = next;
+
+        Raise(nameof(ShowFatal));
+        Raise(nameof(ShowError));
+        Raise(nameof(ShowWarn));
+        Raise(nameof(ShowInfo));
+        Raise(nameof(ShowDebug));
+        Rebuild();
+    }
+
     public int TotalLines => All.Count;
     public int ShownLines => Display.Count;
 
@@ -162,7 +195,8 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
     public int DebugCount { get; private set; }
 
     public string CountsSummary =>
-        $"{TotalLines:N0} lines" + (_matcher.Active ? $" · {ShownLines:N0} shown" : "");
+        $"{TotalLines:N0} lines"
+        + (_matcher.Active || _severityMask != SeverityClasses.All ? $" · {ShownLines:N0} shown" : "");
 
     public Action? RequestScrollToEnd;
 
@@ -179,7 +213,31 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
         All.Clear();
         Display.ReplaceAll(Array.Empty<LogLine>());
         ResetCounters();
+        // The carry belongs to the buffer: leaving it stale meant a line appended
+        // after Clear could inherit visibility from a line that no longer exists.
+        _severityCarry.Reset();
         RaiseStats();
+    }
+
+    /// <summary>
+    /// The context menu's "Clear filters": text filters and the severity chips both,
+    /// because a user reaching for a reset wants the complete view back.
+    /// </summary>
+    public void ClearAllFilters()
+    {
+        Filter.Include = "";
+        Filter.Exclude = "";
+
+        if (_severityMask != SeverityClasses.All)
+        {
+            _severityMask = SeverityClasses.All;
+            Raise(nameof(ShowFatal));
+            Raise(nameof(ShowError));
+            Raise(nameof(ShowWarn));
+            Raise(nameof(ShowInfo));
+            Raise(nameof(ShowDebug));
+            Rebuild();
+        }
     }
 
     public void ApplyRules(RuleSet rules)
@@ -205,7 +263,11 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
             All.Add(line);
             Count(line.Severity, +1);
             if (line.Severity is Severity.Error or Severity.Fatal) newAlerts++;
-            if (PassesFilter(line.Text)) shown.Add(line);
+
+            // The carry must advance for every line, even ones the text filter drops,
+            // or a stack trace would inherit visibility from the wrong ancestor.
+            bool severityPass = _severityCarry.Passes(line.SourceIndex, line.Severity, _severityMask);
+            if (severityPass && PassesFilter(line.Text)) shown.Add(line);
         }
 
         Display.AddRange(shown);
@@ -221,6 +283,7 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
         All.Clear();
         Display.ReplaceAll(Array.Empty<LogLine>());
         ResetCounters();
+        _severityCarry.Reset();
     }
 
     protected void TrimIfNeeded()
@@ -249,6 +312,7 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
     protected void Rebuild()
     {
         var rebuilt = new List<LogLine>(All.Count);
+        _severityCarry.Reset();   // recomputed from the top of the buffer
 
         for (int i = 0; i < All.Count; i++)
         {
@@ -262,7 +326,8 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
                 All[i] = l;
             }
 
-            if (PassesFilter(l.Text)) rebuilt.Add(l);
+            bool severityPass = _severityCarry.Passes(l.SourceIndex, l.Severity, _severityMask);
+            if (severityPass && PassesFilter(l.Text)) rebuilt.Add(l);
         }
 
         RecountAll();

@@ -120,6 +120,7 @@ internal static class Program
         CheckMergeOrdering();
         CheckAlerts();
         CheckSounds();
+        CheckSeverityChips();
         CheckTailer();
         CheckSignatures();
         CheckIssueStore();
@@ -362,6 +363,72 @@ internal static class Program
         var actual = svc.Decide(inForeground, view, viewEnabled, lines, out _, out _);
         Report(actual == expected, what, $"expected {expected}, got {actual}");
         svc.Dispose();
+    }
+
+    // ================= severity chips =================
+
+    private static void CheckSeverityChips()
+    {
+        Section("Severity chip filter");
+
+        var all = SeverityClasses.All;
+        bool carry = true;
+
+        bool a = SeverityFilter.Passes(Severity.Debug, all, ref carry);
+        bool b = SeverityFilter.Passes(Severity.None, all, ref carry);
+        bool c = SeverityFilter.Passes(Severity.Fatal, all, ref carry);
+        Report(a && b && c, "with every chip on, everything is shown", $"debug={a} none={b} fatal={c}");
+
+        // The case the user asked for: error + warn + fatal at the same time.
+        var ewf = SeverityClasses.Error | SeverityClasses.Warn | SeverityClasses.Fatal;
+        carry = true;
+
+        bool info = SeverityFilter.Passes(Severity.Info, ewf, ref carry);
+        bool stackAfterInfo = SeverityFilter.Passes(Severity.None, ewf, ref carry);
+        bool err = SeverityFilter.Passes(Severity.Error, ewf, ref carry);
+        bool stackAfterError = SeverityFilter.Passes(Severity.None, ewf, ref carry);
+        bool frame2 = SeverityFilter.Passes(Severity.None, ewf, ref carry);
+        bool warn = SeverityFilter.Passes(Severity.Warn, ewf, ref carry);
+        bool fatal = SeverityFilter.Passes(Severity.Fatal, ewf, ref carry);
+        bool debug = SeverityFilter.Passes(Severity.Debug, ewf, ref carry);
+
+        Report(!info && err && warn && fatal && !debug,
+            "Error + Warn + Fatal can be shown together with Info and Debug hidden",
+            $"info={info} err={err} warn={warn} fatal={fatal} debug={debug}");
+
+        Report(stackAfterError && frame2,
+            "a filtered-in error keeps its whole stack trace",
+            $"frame1={stackAfterError} frame2={frame2}");
+
+        Report(!stackAfterInfo,
+            "a filtered-out info line takes its continuation with it",
+            $"got {stackAfterInfo}");
+
+        Report(SeverityFilter.ClassOf(Severity.Trace) == SeverityClasses.Debug,
+            "Trace shares the Debug chip", $"got {SeverityFilter.ClassOf(Severity.Trace)}");
+
+        carry = true;
+        bool leading = SeverityFilter.Passes(Severity.None, ewf, ref carry);
+        Report(leading, "unclassified lines before any classified line stay visible", $"got {leading}");
+
+        // The merged-view case the review reproduced: sources interleave, so a single
+        // carry attached file A's stack trace to file B's INFO. The per-source map
+        // must follow each file's own thread of continuation.
+        var map = new SeverityCarryMap();
+        var errOnly = SeverityClasses.Error;
+
+        bool aErr = map.Passes(0, Severity.Error, errOnly);   // file A: ERROR
+        bool bInfo = map.Passes(1, Severity.Info, errOnly);   // file B: INFO, interleaved
+        bool aFrame = map.Passes(0, Severity.None, errOnly);  // file A's stack frame, after B
+        bool bCont = map.Passes(1, Severity.None, errOnly);   // file B's continuation
+
+        Report(aErr && !bInfo && aFrame && !bCont,
+            "in a merged buffer a stack trace follows its own file, not the interleaved neighbour",
+            $"aErr={aErr} bInfo={bInfo} aFrame={aFrame} bCont={bCont}");
+
+        map.Reset();
+        Report(map.Passes(2, Severity.None, errOnly),
+            "after a reset, leading unclassified lines are visible again", "");
     }
 
     // ================= alert sounds =================

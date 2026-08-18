@@ -393,6 +393,35 @@ public partial class MainWindow : Window
         _vm.Dirty = true;
     }
 
+    // Off the UI thread: resolving a wildcard and probing the file both hit the file
+    // system, and an unreachable network share blocks for the full SMB timeout.
+
+    private async void OpenCurrentInEditor_Click(object sender, RoutedEventArgs e)
+    {
+        if (Tab is null)
+        {
+            Notify(Pane is MergedTab ? "The merged view spans several files — use a file tab" : "No log file selected");
+            return;
+        }
+
+        var tab = Tab;
+        var error = await Task.Run(() => ShellOpen.OpenInEditor(tab.ResolvedFilePath));
+        Notify(error ?? "Opened in editor");
+    }
+
+    private async void RevealCurrentInExplorer_Click(object sender, RoutedEventArgs e)
+    {
+        if (Tab is null)
+        {
+            Notify(Pane is MergedTab ? "The merged view spans several files — use a file tab" : "No log file selected");
+            return;
+        }
+
+        var tab = Tab;
+        var error = await Task.Run(() => ShellOpen.RevealInExplorer(tab.ResolvedFilePath));
+        if (error is not null) Notify(error);
+    }
+
     private void ReloadAll_Click(object sender, RoutedEventArgs e)
     {
         if (View is null) return;

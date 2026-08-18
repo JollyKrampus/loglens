@@ -49,10 +49,13 @@ $args = @(
     "--self-contained=$($selfContained.ToString().ToLower())",
     '-p:PublishSingleFile=true',
     '-p:IncludeNativeLibrariesForSelfExtract=true',
-    '-p:EnableCompressionInSingleFile=true',
     '-p:DebugType=none',
     '-o', $publishDir
 )
+
+# The SDK rejects single-file compression for framework-dependent publishes
+# (NETSDK1176), so only self-contained builds ask for it.
+if ($selfContained) { $args += '-p:EnableCompressionInSingleFile=true' }
 
 # PublishTrimmed is deliberately NOT used: WPF is not trim-safe and trimming
 # silently breaks XAML reflection at runtime.

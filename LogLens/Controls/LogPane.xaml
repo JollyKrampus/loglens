@@ -44,20 +44,23 @@
         <Border Grid.Row="0" Background="{DynamicResource App.BgAlt}"
                 BorderBrush="{DynamicResource App.Border}" BorderThickness="0,0,0,1" Padding="6,4">
             <!--
-              Star-sized filter boxes rather than fixed widths: on a narrow window the
-              boxes shrink instead of pushing the toggles and Find button off the edge.
+              Two rows on purpose. A single row overflowed: the transport buttons,
+              chips and Editor button are ~480px of fixed content, and at ordinary
+              pane widths they clipped the Hide box and Find button. Row one holds
+              the fixed-width controls; row two gives the filter boxes the full
+              width, star-sized so they shrink before anything clips.
+
+              Chip letters are explicit TextBlocks because the app's implicit
+              TextBlock style would otherwise override a Foreground set on the
+              ToggleButton itself — the colours silently never rendered.
             -->
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" MinWidth="70" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" MinWidth="70" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,10,0">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
                     <ToggleButton Content="Follow" Margin="0,0,4,0"
                                   IsChecked="{Binding FollowTail, Mode=TwoWay}"
                                   ToolTip="Auto-scroll as new lines arrive. Scrolling up turns this off; scrolling back to the bottom turns it on." />
@@ -68,32 +71,79 @@
                             ToolTip="Clear the on-screen buffer. The file is untouched." />
                     <Button Content="Reload" Click="Reload_Click"
                             ToolTip="Re-read the file from disk." />
+                    <Button Content="Editor" Margin="4,0,0,0" Click="OpenInEditor_Click"
+                            AutomationProperties.AutomationId="OpenInEditor"
+                            IsEnabled="{Binding SupportsOpenInEditor}"
+                            ToolTip="Open this log file in your default editor (Notepad if nothing is associated with .log)." />
+
+                    <!-- Severity chips: which classes of line are shown. All on = show everything. -->
+                    <Border Width="1" Background="{DynamicResource App.Border}" Margin="8,2" />
+                    <ToggleButton Padding="7,3" Margin="0,0,2,0"
+                                  IsChecked="{Binding ShowFatal, Mode=TwoWay}"
+                                  AutomationProperties.AutomationId="ChipFatal"
+                                  ToolTip="Show FATAL lines.">
+                        <TextBlock Text="F" Foreground="#FF8A8A" FontWeight="SemiBold" />
+                    </ToggleButton>
+                    <ToggleButton Padding="7,3" Margin="0,0,2,0"
+                                  IsChecked="{Binding ShowError, Mode=TwoWay}"
+                                  AutomationProperties.AutomationId="ChipError"
+                                  ToolTip="Show ERROR lines. Stack traces follow the line they belong to.">
+                        <TextBlock Text="E" Foreground="#FF8A8A" />
+                    </ToggleButton>
+                    <ToggleButton Padding="7,3" Margin="0,0,2,0"
+                                  IsChecked="{Binding ShowWarn, Mode=TwoWay}"
+                                  AutomationProperties.AutomationId="ChipWarn"
+                                  ToolTip="Show WARN lines.">
+                        <TextBlock Text="W" Foreground="#FFC978" />
+                    </ToggleButton>
+                    <ToggleButton Padding="8,3" Margin="0,0,2,0"
+                                  IsChecked="{Binding ShowInfo, Mode=TwoWay}"
+                                  AutomationProperties.AutomationId="ChipInfo"
+                                  ToolTip="Show INFO lines.">
+                        <TextBlock Text="I" Foreground="#8FD3FF" />
+                    </ToggleButton>
+                    <ToggleButton Padding="7,3"
+                                  IsChecked="{Binding ShowDebug, Mode=TwoWay}"
+                                  AutomationProperties.AutomationId="ChipDebug"
+                                  ToolTip="Show DEBUG and TRACE lines.">
+                        <TextBlock Text="D" Foreground="#9E9E9E" />
+                    </ToggleButton>
                 </StackPanel>
 
-                <TextBlock Grid.Column="1" Text="Show" Style="{StaticResource Dim}" Margin="0,0,5,0" />
-                <TextBox Grid.Column="2" Margin="0,0,10,0"
-                         Text="{Binding Filter.Include, UpdateSourceTrigger=PropertyChanged, Delay=250}"
-                         ToolTip="Only show lines matching this. Blank shows everything." />
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="60" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" MinWidth="60" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="3" Text="Hide" Style="{StaticResource Dim}" Margin="0,0,5,0" />
-                <TextBox Grid.Column="4" Margin="0,0,6,0"
-                         Text="{Binding Filter.Exclude, UpdateSourceTrigger=PropertyChanged, Delay=250}"
-                         ToolTip="Drop lines matching this." />
+                    <TextBlock Grid.Column="0" Text="Show" Style="{StaticResource Dim}" Margin="0,0,5,0" />
+                    <TextBox Grid.Column="1" Margin="0,0,10,0"
+                             Text="{Binding Filter.Include, UpdateSourceTrigger=PropertyChanged, Delay=250}"
+                             ToolTip="Only show lines matching this. Blank shows everything." />
 
-                <StackPanel Grid.Column="5" Orientation="Horizontal">
-                    <TextBlock Text="!" FontWeight="Bold" Margin="0,0,6,0"
-                               Foreground="{DynamicResource App.Danger}"
-                               ToolTip="{Binding FilterError}"
-                               Visibility="{Binding FilterError, Converter={StaticResource NonEmptyToVis}}" />
-                    <ToggleButton Content=".*" Margin="0,0,3,0" Padding="6,3"
-                                  IsChecked="{Binding Filter.IsRegex, Mode=TwoWay}"
-                                  ToolTip="Treat the filters as regular expressions." />
-                    <ToggleButton Content="Aa" Margin="0,0,10,0" Padding="6,3"
-                                  IsChecked="{Binding Filter.CaseSensitive, Mode=TwoWay}"
-                                  ToolTip="Case-sensitive filtering." />
-                    <Button Content="Find" Click="ShowFind_Click"
-                            ToolTip="Find in this tab (Ctrl+F)." />
-                </StackPanel>
+                    <TextBlock Grid.Column="2" Text="Hide" Style="{StaticResource Dim}" Margin="0,0,5,0" />
+                    <TextBox Grid.Column="3" Margin="0,0,6,0"
+                             Text="{Binding Filter.Exclude, UpdateSourceTrigger=PropertyChanged, Delay=250}"
+                             ToolTip="Drop lines matching this." />
+
+                    <StackPanel Grid.Column="4" Orientation="Horizontal">
+                        <TextBlock Text="!" FontWeight="Bold" Margin="0,0,6,0"
+                                   Foreground="{DynamicResource App.Danger}"
+                                   ToolTip="{Binding FilterError}"
+                                   Visibility="{Binding FilterError, Converter={StaticResource NonEmptyToVis}}" />
+                        <ToggleButton Content=".*" Margin="0,0,3,0" Padding="6,3"
+                                      IsChecked="{Binding Filter.IsRegex, Mode=TwoWay}"
+                                      ToolTip="Treat the filters as regular expressions." />
+                        <ToggleButton Content="Aa" Margin="0,0,10,0" Padding="6,3"
+                                      IsChecked="{Binding Filter.CaseSensitive, Mode=TwoWay}"
+                                      ToolTip="Case-sensitive filtering." />
+                        <Button Content="Find" Click="ShowFind_Click"
+                                ToolTip="Find in this tab (Ctrl+F)." />
+                    </StackPanel>
+                </Grid>
             </Grid>
         </Border>
 
@@ -169,6 +219,11 @@
                     <Separator />
                     <MenuItem Header="Filter to lines like this" Click="FilterToSelection_Click" />
                     <MenuItem Header="Clear filters" Click="ClearFilters_Click" />
+                    <Separator />
+                    <MenuItem Header="Open log in default editor" Click="OpenInEditor_Click"
+                              IsEnabled="{Binding SupportsOpenInEditor}" />
+                    <MenuItem Header="Show log in File Explorer" Click="RevealInExplorer_Click"
+                              IsEnabled="{Binding SupportsOpenInEditor}" />
                 </ContextMenu>
             </ListBox.ContextMenu>
         </ListBox>
@@ -177,7 +232,8 @@
         <Border Grid.Row="3" Background="{DynamicResource App.BgAlt}"
                 BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="8,3">
             <DockPanel>
-                <TextBlock Text="{Binding CountsSummary}" Style="{StaticResource Dim}" DockPanel.Dock="Left" />
+                <TextBlock Text="{Binding CountsSummary}" Style="{StaticResource Dim}" DockPanel.Dock="Left"
+                           AutomationProperties.AutomationId="PaneCounts" />
 
                 <TextBlock Style="{StaticResource Dim}" Margin="14,0,0,0" DockPanel.Dock="Left"
                            Foreground="{DynamicResource App.Danger}"

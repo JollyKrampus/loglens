@@ -41,6 +41,10 @@ public sealed class LogTab : LogPaneVm
     public override string Header => Source.Name;
     public override string PathSpec => Source.Path;
 
+    /// <summary>Resolved fresh each time, so a wildcard tab opens today's file, not yesterday's.</summary>
+    public override string? ResolvedFilePath => PathResolver.Resolve(Source.Path);
+    public override bool SupportsOpenInEditor => true;
+
     /// <summary>Which timestamp layout was detected, shown in the merged view's status.</summary>
     public string TimestampFormatName => _clock.FormatName;
 
