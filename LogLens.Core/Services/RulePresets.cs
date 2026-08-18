@@ -7,17 +7,19 @@ public sealed record RulePreset(string Name, string Description, Func<List<Highl
 /// <summary>
 /// Ready-made rule sets for the log formats people actually have.
 ///
-/// The generic preset matches severity keywords anywhere on the line, which is
-/// forgiving but can mis-colour a line whose *message* mentions "error". The
-/// format-specific presets anchor to the level field instead, so only the real
-/// level column counts.
+/// The generic preset (also the defaults) honours a pipe-delimited level field
+/// when one exists and falls back to matching severity keywords anywhere on the
+/// line. The format-specific presets anchor to the level field exclusively, so
+/// only the real level column ever counts.
 /// </summary>
 public static class RulePresets
 {
     public static IReadOnlyList<RulePreset> All =>
     [
         new("Severity keywords (generic)",
-            "Matches FATAL/ERROR/WARN/INFO/DEBUG anywhere on the line. Works with almost any format.",
+            "The default rules. A pipe-delimited level field decides when one exists; "
+            + "otherwise FATAL/ERROR/WARN/INFO/DEBUG match anywhere on the line. "
+            + "Works with almost any format.",
             HighlightRule.Defaults),
 
         new("NLog / log4net (pipe-delimited)",

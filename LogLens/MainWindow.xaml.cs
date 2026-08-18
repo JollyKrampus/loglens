@@ -62,11 +62,11 @@ public partial class MainWindow : Window
 
         // The issue database lives beside the workspace, so a portable install keeps
         // its history on the same stick.
-        var dbPath = Path.Combine(
+        _issuesDbPath = Path.Combine(
             Path.GetDirectoryName(_vm.WorkspacePath) ?? WorkspaceStore.RoamingDirectory,
             "loglens.issues.db");
 
-        _issues = new IssueRecorder(new IssueStore(dbPath), _vm.Settings);
+        _issues = new IssueRecorder(new IssueStore(_issuesDbPath), _vm.Settings);
         _vm.LinesIngested += (view, tab, lines) => _issues.Observe(view.Name, tab.Header, lines);
 
         // A previous self-update may have left LogLens.exe.old behind.
@@ -179,7 +179,10 @@ public partial class MainWindow : Window
     }
 
     private readonly AlertService _alerts;
-    private readonly IssueRecorder _issues;
+    private readonly string _issuesDbPath;
+
+    // Not readonly: a failed update swap disposes and then revives the recorder.
+    private IssueRecorder _issues;
 
     /// <summary>A file tab took on error-level lines; let the alert service decide what to do.</summary>
     private void OnAlertsDetected(ViewVm view, LogTab tab, IReadOnlyList<LogLine> lines)
@@ -283,6 +286,30 @@ public partial class MainWindow : Window
         _updateHandoff = true;
         try { _alerts.Dispose(); } catch (Exception ex) { App.LogError(ex, "update handoff"); }
         try { _issues.Dispose(); } catch (Exception ex) { App.LogError(ex, "update handoff"); }
+    }
+
+    /// <summary>
+    /// The swap or the restart failed AFTER the handoff: the app keeps running, so
+    /// put it back into full working order. Without this, the handoff flag would make
+    /// the eventual close skip its save — every change made after the failed update
+    /// would be silently lost — and auto-save plus issue recording would stay dead.
+    /// The alert service needs no help: it recreates its tray icon on demand.
+    /// </summary>
+    public void AbortUpdateHandoff()
+    {
+        _updateHandoff = false;
+        _autoSaveTimer.Start();
+
+        try
+        {
+            _issues = new IssueRecorder(new IssueStore(_issuesDbPath), _vm.Settings);
+        }
+        catch (Exception ex)
+        {
+            // Saving still works, which is what matters; issue tracking sits out the
+            // rest of the session and comes back on the next start.
+            App.LogError(ex, "update abort");
+        }
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)

@@ -51,9 +51,21 @@ public partial class UpdateWindow : Window
             // then swap and start the new exe, then take the whole app down. The
             // successor must never start while our files are still open — that
             // overlap is what crashed the outgoing version. A failed save throws
-            // into the catch below and the update is called off entirely.
-            (Owner as MainWindow)?.PrepareForUpdateHandoff();
-            UpdateService.ApplyAndRestart(staged);
+            // into the catch below and the update is called off entirely; a failed
+            // swap or restart after the handoff must UNDO the handoff, or the app
+            // would keep running with auto-save stopped and a close that skips
+            // saving.
+            var main = Owner as MainWindow;
+            main?.PrepareForUpdateHandoff();
+            try
+            {
+                UpdateService.ApplyAndRestart(staged);
+            }
+            catch
+            {
+                main?.AbortUpdateHandoff();
+                throw;
+            }
             Application.Current.Shutdown();
         }
         catch (Exception ex)

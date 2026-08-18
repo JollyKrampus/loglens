@@ -223,7 +223,19 @@ public static class UpdateService
     {
         var backup = exePath + BackupSuffix;
 
-        if (File.Exists(backup)) File.Delete(backup);
+        // A leftover .old can be held open by a virus scanner or a backup tool, and
+        // startup cleanup gives up quietly on it. Renaming the running exe to a FRESH
+        // name always works, so step aside rather than fail the whole update over a
+        // file that only exists to be deleted. Cleanup collects the variants later.
+        try
+        {
+            if (File.Exists(backup)) File.Delete(backup);
+        }
+        catch
+        {
+            backup = exePath + BackupSuffix + "-" + Environment.TickCount64;
+        }
+
         File.Move(exePath, backup);
 
         try
@@ -293,7 +305,20 @@ public static class UpdateService
         var exePath = Environment.ProcessPath;
         if (exePath is null) return;
 
-        foreach (var leftover in new[] { exePath + BackupSuffix, exePath + StagedSuffix })
+        // .old plus any .old-<ticks> variants PerformSwap had to step around.
+        var leftovers = new List<string> { exePath + StagedSuffix };
+        try
+        {
+            var dir = Path.GetDirectoryName(exePath);
+            if (dir is not null)
+                leftovers.AddRange(Directory.GetFiles(dir, Path.GetFileName(exePath) + BackupSuffix + "*"));
+        }
+        catch
+        {
+            leftovers.Add(exePath + BackupSuffix);
+        }
+
+        foreach (var leftover in leftovers)
         {
             for (int attempt = 0; attempt < 10; attempt++)
             {
