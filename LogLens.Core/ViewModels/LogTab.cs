@@ -1,3 +1,4 @@
+using LogLens.Core;
 using LogLens.Models;
 using LogLens.Services;
 
@@ -25,7 +26,7 @@ public sealed class LogTab : LogPaneVm
 
     public event Action<LinesAppendedEventArgs>? LinesAppended;
 
-    public LogTab(LogSource source, AppSettings settings) : base(settings)
+    public LogTab(LogSource source, AppSettings settings, IUiThread ui) : base(settings, ui)
     {
         Source = source;
 
@@ -92,7 +93,7 @@ public sealed class LogTab : LogPaneVm
 
         _tailer = new LogTailer(Source.Path, Settings.InitialTailKb * 1024);
         _tailer.Batch += OnBatch;
-        _tailer.StatusChanged += m => Ui.BeginInvoke(() =>
+        _tailer.StatusChanged += m => Ui.Post(() =>
         {
             Status = m;
             Raise(nameof(HasError));
@@ -123,7 +124,7 @@ public sealed class LogTab : LogPaneVm
 
     private void OnBatch(TailBatch batch)
     {
-        Ui.BeginInvoke(() =>
+        Ui.Post(() =>
         {
             IsPrimed = true;
             if (batch.Rewound)

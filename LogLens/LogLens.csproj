@@ -13,8 +13,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Regenerate with tools\New-AppIcon.ps1. Sets the exe, taskbar and window icon. -->
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.4.0</Version>
-    <InformationalVersion>1.4.0</InformationalVersion>
+    <Version>1.5.0</Version>
+    <InformationalVersion>1.5.0</InformationalVersion>
     <Product>LogLens</Product>
     <AssemblyTitle>LogLens - real-time log viewer</AssemblyTitle>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>

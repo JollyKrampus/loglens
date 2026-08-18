@@ -238,7 +238,16 @@ public static class UpdateService
         }
     }
 
-    /// <summary>Swaps the running exe for the staged download and starts the new one.</summary>
+    /// <summary>The argument the new instance uses to wait for its predecessor.</summary>
+    public const string UpdatedFromArg = "--updated-from";
+
+    /// <summary>
+    /// Swaps the running exe for the staged download and starts the new one. The new
+    /// instance is told our PID so it can WAIT for us to fully exit before touching
+    /// anything — the old instance still has the workspace file and the issue
+    /// database open while it shuts down, and starting the successor into that
+    /// overlap is what made the outgoing version die with an error dialog.
+    /// </summary>
     public static void ApplyAndRestart(string stagedPath)
     {
         var exePath = Environment.ProcessPath
@@ -246,10 +255,39 @@ public static class UpdateService
 
         PerformSwap(exePath, stagedPath);
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath)
-        { UseShellExecute = true });
+        {
+            UseShellExecute = true,
+            Arguments = $"{UpdatedFromArg} {Environment.ProcessId}"
+        });
     }
 
-    /// <summary>Removes files a previous update left behind. Call once at startup.</summary>
+    /// <summary>
+    /// If launched by a self-update, block until the predecessor has exited so its
+    /// shutdown (workspace save, database checkpoint) finishes before we begin.
+    /// Bounded: a hung predecessor delays us at most <paramref name="maxWaitMs"/>.
+    /// </summary>
+    public static void WaitForPredecessor(string[] args, int maxWaitMs = 15_000)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] != UpdatedFromArg || !int.TryParse(args[i + 1], out var pid)) continue;
+
+            try
+            {
+                using var predecessor = System.Diagnostics.Process.GetProcessById(pid);
+                predecessor.WaitForExit(maxWaitMs);
+            }
+            catch { /* already gone — exactly what we want */ }
+            return;
+        }
+    }
+
+    /// <summary>
+    /// Removes files a previous update left behind. Retries briefly: when the update
+    /// came from a version that did not pass <see cref="UpdatedFromArg"/>, the old
+    /// instance may still be exiting and holding its (renamed) image file — the
+    /// retry doubles as a wait for it.
+    /// </summary>
     public static void CleanUpLeftovers()
     {
         var exePath = Environment.ProcessPath;
@@ -257,9 +295,19 @@ public static class UpdateService
 
         foreach (var leftover in new[] { exePath + BackupSuffix, exePath + StagedSuffix })
         {
-            // The .old file can still be locked if the previous instance is mid-exit;
-            // the next start gets it.
-            try { if (File.Exists(leftover)) File.Delete(leftover); } catch { }
+            for (int attempt = 0; attempt < 10; attempt++)
+            {
+                try
+                {
+                    if (!File.Exists(leftover)) break;
+                    File.Delete(leftover);
+                    break;
+                }
+                catch
+                {
+                    Thread.Sleep(300);
+                }
+            }
         }
     }
 }

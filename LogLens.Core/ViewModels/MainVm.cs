@@ -15,12 +15,18 @@ public sealed class MainVm : ObservableObject, IDisposable
 
     public ObservableCollection<ViewVm> Views { get; } = [];
 
-    public MainVm(Workspace ws, string path)
+    private readonly IUiThread _ui;
+
+    public MainVm(Workspace ws, string path, IUiThread ui)
     {
         _ws = ws;
         _workspacePath = path;
+        _ui = ui;
         LoadFromWorkspace();
     }
+
+    /// <summary>Something a shell should show the user (message box, toast, status bar…).</summary>
+    public event Action<string>? UserMessage;
 
     public AppSettings Settings => _ws.Settings;
     public AlertSettings Alerts => _ws.Alerts;
@@ -73,7 +79,7 @@ public sealed class MainVm : ObservableObject, IDisposable
         Views.Clear();
 
         foreach (var def in _ws.Views)
-            Views.Add(Track(new ViewVm(def, _ws.Settings, () => _ws.Rules)));
+            Views.Add(Track(new ViewVm(def, _ws.Settings, () => _ws.Rules, _ui)));
 
         SelectedView = Views.FirstOrDefault(v => v.Id == _ws.ActiveViewId) ?? Views.FirstOrDefault();
 
@@ -85,6 +91,8 @@ public sealed class MainVm : ObservableObject, IDisposable
     {
         view.AlertsDetected += (v, tab, lines) => AlertsDetected?.Invoke(v, tab, lines);
         view.LinesIngested += (v, tab, lines) => LinesIngested?.Invoke(v, tab, lines);
+        view.StateChanged += () => Dirty = true;
+        view.NotifyUser = m => UserMessage?.Invoke(m);
         return view;
     }
 
@@ -94,7 +102,7 @@ public sealed class MainVm : ObservableObject, IDisposable
     {
         var def = new ViewDef { Name = name };
         _ws.Views.Add(def);
-        var vm = Track(new ViewVm(def, _ws.Settings, () => _ws.Rules));
+        var vm = Track(new ViewVm(def, _ws.Settings, () => _ws.Rules, _ui));
         Views.Add(vm);
         SelectedView = vm;
         Dirty = true;
@@ -105,7 +113,7 @@ public sealed class MainVm : ObservableObject, IDisposable
     {
         var def = source.Def.Clone();
         _ws.Views.Add(def);
-        var vm = Track(new ViewVm(def, _ws.Settings, () => _ws.Rules));
+        var vm = Track(new ViewVm(def, _ws.Settings, () => _ws.Rules, _ui));
         Views.Add(vm);
         vm.StartAll();
         SelectedView = vm;
@@ -144,6 +152,10 @@ public sealed class MainVm : ObservableObject, IDisposable
 
     public void SaveAs(string path)
     {
+        // Live pane state (chips, filters, follow) is captured into the model at
+        // save time rather than mirrored on every keystroke.
+        foreach (var v in Views) v.CapturePaneStates();
+
         WorkspaceStore.Save(_ws, path);
         WorkspacePath = path;
         Dirty = false;
