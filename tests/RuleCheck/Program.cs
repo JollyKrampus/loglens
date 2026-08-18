@@ -48,7 +48,7 @@ internal static class Program
             Severity.Info, "INFO whose message says 'error' stays INFO");
 
         Expect(generic, "2026-08-14 12:52:40.0835|INFO|Acme.Jobs.NightlyBatch|Recovered from a transient error after 3 attempts",
-            Severity.Error, "generic keyword preset mis-reads that line (documented trade-off)");
+            Severity.Info, "the default rules also honour a pipe-delimited level field when one exists");
 
         // Multi-line exception spill: coloured, but must not inflate error counts.
         ExpectRule(nlogPipe, "System.Net.Http.HttpRequestException: The operation timed out.",
@@ -78,6 +78,27 @@ internal static class Program
 
         Expect(nlogJson, """{"time":"2026-08-14T12:52:40.08-06:00","level":"Warn","logger":"Acme.Cache","message":"Slow"}""",
             Severity.Warn, "level Warn");
+
+        // ---- default rules: the level field must outrank message keywords ------
+
+        Section("Default rules, level field vs message keywords");
+
+        // The reported case verbatim: NLog logs at level Error, but the message
+        // itself begins "****Fatal error received". The level field must win.
+        Expect(generic, "2026-08-18 07:12:44.1230|Error|Acme.Gateway.Listener|****Fatal error received from gateway: connection reset",
+            Severity.Error, "|Error| line whose message says 'Fatal error' counts as Error");
+
+        Expect(generic, "2026-08-18 07:12:44.1230|ERROR|Acme.Gateway.Listener|****Fatal error received from gateway: connection reset",
+            Severity.Error, "same with an uppercase level field");
+
+        Expect(generic, "2026-08-18 07:12:45.0001|Fatal|Acme.Host|Host is going down",
+            Severity.Fatal, "a real |Fatal| level field still counts as Fatal");
+
+        Expect(generic, "2026-08-18 07:12:45.0001|Warn|Acme.Cache|Error rate above threshold",
+            Severity.Warn, "|Warn| line mentioning 'Error' stays Warn");
+
+        Expect(generic, "2026-08-18 07:12:45.0001|Debug|Acme.Orders|FATAL flag parsed from config",
+            Severity.Debug, "|Debug| line mentioning 'FATAL' stays Debug");
 
         // ---- generic preset on space-delimited logs ----------------------------
 
@@ -122,6 +143,7 @@ internal static class Program
         CheckSounds();
         CheckSeverityChips();
         CheckWorkspaceCompat();
+        CheckLegacyRuleUpgrade();
         CheckUpdater();
         CheckTailer();
         CheckSignatures();
@@ -916,6 +938,84 @@ internal static class Program
                    && !again.Settings.AutoSaveWorkspace,
                 "severity chips, filters and auto-save round-trip through the workspace file",
                 $"info={paneAgain.ShowInfo} include='{paneAgain.Include}' mergedWarn={again.Views[0].MergedPane.ShowWarn}");
+        }
+        finally
+        {
+            try { File.Delete(path); } catch { }
+        }
+    }
+
+    // ================= legacy default-rule upgrade =================
+
+    /// <summary>The default rules exactly as releases 1.0–1.5.0 wrote them.</summary>
+    private static List<HighlightRule> Pre151DefaultRules() =>
+    [
+        new() { Name = "Fatal",   Pattern = @"\b(FATAL|CRITICAL|PANIC)\b",        Severity = Severity.Fatal, Foreground = "#FFFFFF", Background = "#8B1A1A", Bold = true },
+        new() { Name = "Error",   Pattern = @"\b(ERROR|ERR|SEVERE|EXCEPTION)\b",  Severity = Severity.Error, Foreground = "#FF8A8A", Background = "#3A1414" },
+        new() { Name = "Warning", Pattern = @"\b(WARN|WARNING)\b",                Severity = Severity.Warn,  Foreground = "#FFC978", Background = "#332616" },
+        new() { Name = "Info",    Pattern = @"\b(INFO|INFORMATION)\b",            Severity = Severity.Info,  Foreground = "#8FD3FF" },
+        new() { Name = "Debug",   Pattern = @"\b(DEBUG|DBG)\b",                   Severity = Severity.Debug, Foreground = "#9E9E9E" },
+        new() { Name = "Trace",   Pattern = @"\b(TRACE|VERBOSE)\b",               Severity = Severity.Trace, Foreground = "#6E6E6E" },
+        new() { Name = "Stack frame", Pattern = @"^\s+at\s",                      Severity = Severity.None,  Foreground = "#C58A8A" },
+    ];
+
+    private static void CheckLegacyRuleUpgrade()
+    {
+        Section("Legacy default-rule upgrade");
+
+        var path = Path.Combine(Path.GetTempPath(), $"loglens-rules-{Guid.NewGuid():N}.json");
+        try
+        {
+            // A workspace still carrying the untouched pre-1.5.1 defaults, written by
+            // the real serialiser, must come back with the two-tier defaults.
+            var old = Workspace.CreateDefault();
+            old.Rules = Pre151DefaultRules();
+            WorkspaceStore.Save(old, path);
+
+            var upgraded = WorkspaceStore.Load(path);
+            var fresh = HighlightRule.Defaults();
+
+            Report(upgraded.Rules.Count == fresh.Count
+                   && upgraded.Rules[0].Name == fresh[0].Name
+                   && upgraded.Rules[0].Pattern == fresh[0].Pattern,
+                "untouched pre-1.5.1 defaults are upgraded to the two-tier defaults",
+                $"count={upgraded.Rules.Count} first={upgraded.Rules[0].Name}");
+
+            var set = new RuleSet([], upgraded.Rules);
+            var match = set.Match("2026-08-18 07:12:44.1230|Error|Acme.Gateway|****Fatal error received from gateway");
+            Report(match?.Severity == Severity.Error,
+                "after the upgrade, |Error| beats a message mentioning 'Fatal'",
+                $"got {match?.Severity.ToString() ?? "none"} via '{match?.Name ?? "none"}'");
+
+            // One recoloured rule = the user owns the list; nothing changes.
+            var custom = Workspace.CreateDefault();
+            custom.Rules = Pre151DefaultRules();
+            custom.Rules[1].Foreground = "#FF0000";
+            WorkspaceStore.Save(custom, path);
+
+            var kept = WorkspaceStore.Load(path);
+            Report(kept.Rules.Count == 7 && kept.Rules[1].Foreground == "#FF0000",
+                "a customised rule set is left exactly alone",
+                $"count={kept.Rules.Count} fg={kept.Rules[1].Foreground}");
+
+            // Same for a disabled rule — that is a deliberate choice, not staleness.
+            var muted = Workspace.CreateDefault();
+            muted.Rules = Pre151DefaultRules();
+            muted.Rules[4].Enabled = false;
+            WorkspaceStore.Save(muted, path);
+
+            var keptMuted = WorkspaceStore.Load(path);
+            Report(keptMuted.Rules.Count == 7 && !keptMuted.Rules[4].Enabled,
+                "a rule set with a disabled rule is left alone too",
+                $"count={keptMuted.Rules.Count}");
+
+            // The current defaults must round-trip untouched (no repeat upgrades).
+            var current = Workspace.CreateDefault();
+            WorkspaceStore.Save(current, path);
+            var reloaded = WorkspaceStore.Load(path);
+            Report(reloaded.Rules.Count == fresh.Count,
+                "current defaults round-trip without being rewritten",
+                $"count={reloaded.Rules.Count}");
         }
         finally
         {

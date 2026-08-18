@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -8,7 +8,7 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>LogLens.Avalonia</RootNamespace>
     <AssemblyName>LogLens.Avalonia</AssemblyName>
-    <Version>1.5.0</Version>
+    <Version>1.5.1</Version>
     <InformationalVersion>1.5.0</InformationalVersion>
     <!-- Reflection bindings, same style as the WPF app's XAML. -->
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>

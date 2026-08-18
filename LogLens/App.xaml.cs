@@ -19,6 +19,11 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             LogCrash(args.ExceptionObject as Exception, "AppDomain");
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            LogCrash(args.Exception, "Task");
+            args.SetObserved();
+        };
 
         base.OnStartup(e);
     }
@@ -52,6 +57,9 @@ public partial class App : Application
 
     public static string CrashLogPath =>
         Path.Combine(Path.GetTempPath(), "loglens-errors.log");
+
+    /// <summary>For handled-but-noteworthy failures elsewhere — same file as crashes.</summary>
+    public static void LogError(Exception ex, string source) => LogCrash(ex, source);
 
     private static void LogCrash(Exception? ex, string source)
     {

@@ -45,10 +45,14 @@ public partial class UpdateWindow : Window
 
             var staged = await UpdateService.DownloadAndVerifyAsync(_update, progress);
 
-            StatusLine.Text = "Verified. Restarting…";
+            StatusLine.Text = "Verified. Saving and restarting…";
 
-            // Swap and start the new exe, then take the whole app down. The main
-            // window's Closing handler saves the workspace on the way out.
+            // Order matters: save the workspace and close the issue database FIRST,
+            // then swap and start the new exe, then take the whole app down. The
+            // successor must never start while our files are still open — that
+            // overlap is what crashed the outgoing version. A failed save throws
+            // into the catch below and the update is called off entirely.
+            (Owner as MainWindow)?.PrepareForUpdateHandoff();
             UpdateService.ApplyAndRestart(staged);
             Application.Current.Shutdown();
         }
