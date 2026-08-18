@@ -79,21 +79,31 @@ jobs:
 
       - name: Publish for Apple Silicon and Intel
         run: |
+          # The tag carries the version for Info.plist; manual runs get a dev stamp.
+          VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.0.0-dev"
+
           for rid in osx-arm64 osx-x64; do
             # IncludeNativeLibrariesForSelfExtract matters: without it the publish
             # drops four dylibs (Skia, HarfBuzz, AvaloniaNative, sqlite) BESIDE the
-            # binary and "one self-contained file" would be a lie. Same mechanism
+            # binary and "one self-contained app" would be a lie. Same mechanism
             # the Windows exe uses; they unpack to a temp dir on first launch.
             dotnet publish LogLens.Avalonia/LogLens.Avalonia.csproj -c Release -r $rid \
               --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
               -p:DebugType=none -o "out/$rid"
-            # The binary is the whole app; "LogLens.Avalonia" made people think they
-            # had to install Avalonia. Renaming the apphost is safe — the bundle it
-            # loads is inside its own file.
-            mv "out/$rid/LogLens.Avalonia" "out/$rid/LogLens"
-            chmod +x "out/$rid/LogLens"
-            cp packaging/macos-readme.txt "out/$rid/README.txt"
-            tar -czf "LogLens-macos-$rid.tar.gz" -C "out/$rid" .
+
+            # A bare Mach-O executable cannot carry a Finder icon or a Dock name —
+            # only a .app bundle can. Assemble one: Info.plist + the binary (renamed
+            # LogLens; the apphost's payload is inside its own file, so renaming is
+            # safe) + the icns rendered from the same artwork as app.ico.
+            APP="stage/$rid/LogLens.app"
+            mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+            sed "s/APP_VERSION/$VERSION/g" packaging/Info.plist > "$APP/Contents/Info.plist"
+            mv "out/$rid/LogLens.Avalonia" "$APP/Contents/MacOS/LogLens"
+            chmod +x "$APP/Contents/MacOS/LogLens"
+            cp packaging/LogLens.icns "$APP/Contents/Resources/LogLens.icns"
+            cp packaging/macos-readme.txt "stage/$rid/README.txt"
+            tar -czf "LogLens-macos-$rid.tar.gz" -C "stage/$rid" .
           done
           shasum -a 256 LogLens-macos-*.tar.gz > SHA256SUMS-macos.txt
           cat SHA256SUMS-macos.txt

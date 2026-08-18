@@ -42,18 +42,31 @@ public static class WorkspaceStore
         }
     }
 
+    /// <summary>
+    /// Inside a macOS .app bundle "beside the exe" is Contents/MacOS — writing the
+    /// workspace there hides it from the user and would invalidate the bundle's
+    /// signature the day releases are signed. A bundle is not a portable install.
+    /// </summary>
+    private static bool IsInsideMacBundle =>
+        AppDirectory.Replace('\\', '/').Contains(".app/Contents/MacOS", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Where the default workspace lives, preferring the portable location.</summary>
     public static string DefaultPath
     {
         get
         {
-            var portable = Path.Combine(AppDirectory, FileName);
-            if (File.Exists(portable)) return portable;
+            if (!IsInsideMacBundle)
+            {
+                var portable = Path.Combine(AppDirectory, FileName);
+                if (File.Exists(portable)) return portable;
+            }
 
             var roaming = Path.Combine(RoamingDirectory, FileName);
             if (File.Exists(roaming)) return roaming;
 
-            return IsWritable(AppDirectory) ? portable : roaming;
+            return !IsInsideMacBundle && IsWritable(AppDirectory)
+                ? Path.Combine(AppDirectory, FileName)
+                : roaming;
         }
     }
 
