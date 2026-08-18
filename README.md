@@ -103,20 +103,26 @@ Need a one-off binary without tagging? Actions tab → **build** → *Run workfl
 ## macOS (early)
 
 Since 1.5.0 each release also carries `LogLens-macos-osx-arm64.tar.gz` (Apple
-Silicon) and `LogLens-macos-osx-x64.tar.gz` (Intel): a single self-contained
-`LogLens` binary — **nothing to install**, the .NET runtime and UI toolkit are
+Silicon) and `LogLens-macos-osx-x64.tar.gz` (Intel): a self-contained
+**`LogLens.app`** — **nothing to install**, the .NET runtime and UI toolkit are
 baked in, exactly like the Windows exe — over the same core: tailing, views,
 merged timeline, severity chips, filters, highlight rules, the per-view issue
-database and Jira tickets. Not yet ported: alerts/sounds, self-update,
-find-in-tab, and the editor/Explorer integrations — the Windows WPF app remains
-the full experience. (Releases up to 1.5.1 named the binary `LogLens.Avalonia`
-— same app, just the project's name.)
+database and Jira tickets. The bundle carries the same icon as the Windows app
+(both are rendered from one piece of artwork by `tools\New-AppIcon.ps1` /
+`New-MacIcns.ps1`). Not yet ported: alerts/sounds, self-update, find-in-tab,
+and the editor/Explorer integrations — the Windows WPF app remains the full
+experience. (Releases before 1.5.3 shipped a bare binary instead of a bundle;
+1.5.2 named it `LogLens`, earlier ones `LogLens.Avalonia`.)
 
-To run it on a Mac, from the folder you extracted into:
+To run it on a Mac — once, from the folder you extracted into:
 
 ```bash
-xattr -cr . && chmod +x LogLens && ./LogLens
+xattr -cr LogLens.app
 ```
+
+then double-click `LogLens.app` like any other app. The workspace is saved to
+`~/.config/LogLens/` (a bundle isn't a portable install, so nothing is written
+inside the .app).
 
 The `xattr` line matters: the binaries are **not signed or notarised** (that needs
 an Apple Developer account, $99/year), and Gatekeeper blocks unsigned downloads
