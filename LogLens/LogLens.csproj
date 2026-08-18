@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -13,7 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Regenerate with tools\New-AppIcon.ps1. Sets the exe, taskbar and window icon. -->
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.5.0</Version>
+    <Version>1.5.1</Version>
     <InformationalVersion>1.5.0</InformationalVersion>
     <Product>LogLens</Product>
     <AssemblyTitle>LogLens - real-time log viewer</AssemblyTitle>
@@ -41,7 +41,7 @@
   </ItemGroup>
   <!--
     Everything that doesn't touch WPF lives in LogLens.Core (models, tailing,
-    issue store, updater…) so the planned Avalonia app can share it. Sqlite comes
+    issue store, updaterâ€¦) so the planned Avalonia app can share it. Sqlite comes
     in transitively through Core; its native e_sqlite3 still survives single-file
     publish because IncludeNativeLibrariesForSelfExtract is on.
   -->

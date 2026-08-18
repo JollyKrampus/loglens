@@ -342,31 +342,38 @@ disk write, and the queue is capped so a runaway log cannot eat memory.
 
 | Preset | For |
 |---|---|
-| **Severity keywords (generic)** | Anything. Matches `FATAL`/`ERROR`/`WARN`/`INFO`/`DEBUG` anywhere on the line. |
+| **Severity keywords (generic)** | Anything. Honours a pipe-delimited level field when one exists, falls back to matching `FATAL`/`ERROR`/`WARN`/`INFO`/`DEBUG` anywhere on the line. This is also the default rule set. |
 | **NLog / log4net (pipe-delimited)** | `${longdate}\|${level:uppercase=true}\|${logger}\|${message}` — NLog's stock file layout. |
 | **NLog JsonLayout** | NLog's `JsonLayout`, one JSON object per line. |
 | **Serilog / short levels** | Three-letter levels: `VRB DBG INF WRN ERR FTL`. |
 
-### Why the NLog preset instead of the generic one
+### The level field always outranks the message
 
-The generic preset matches keywords anywhere on the line, so this real line gets
-mis-coloured as an error:
+Keyword matching alone would mis-colour this real line as an error:
 
 ```
 2026-08-14 12:52:40.0835|INFO|Acme.Jobs.NightlyBatch|Recovered from a transient error after 3 attempts
 ```
 
-It's an INFO line, but the word "error" is in the message, and `Error` is checked
-before `Info`. The NLog preset anchors on the level being **its own pipe-delimited
-field**:
+— it's an INFO line, but the word "error" is in the message. So the default rules
+come in two tiers. The first tier only matches a level that is **its own
+pipe-delimited field**:
 
 ```
 (^|\|)\s*(ERROR)\s*\|
 ```
 
-so the message text can say whatever it likes. That shape also means it doesn't
-care whether the level is the second column or the fifth — reordering your NLog
+so a `|Error|` line whose message screams "Fatal error received" still counts as
+an error, and the message text can say whatever it likes. The keyword tier below
+it catches formats with no pipe fields. That shape also means it doesn't care
+whether the level is the second column or the fifth — reordering your NLog
 layout won't break it.
+
+Workspaces that still carry the untouched pre-1.5.1 defaults are upgraded to the
+two-tier set automatically on load; a rule list you've edited in any way is left
+exactly as it is (load the preset yourself if you want the new behaviour). The
+dedicated NLog preset is still the tightest choice for pipe layouts — it skips
+the keyword fallback entirely and adds exception-continuation colouring.
 
 ### Multi-line exceptions
 

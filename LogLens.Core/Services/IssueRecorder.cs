@@ -112,7 +112,13 @@ public sealed class IssueRecorder : IDisposable
 
     public void Dispose()
     {
-        _flushTimer.Dispose();
+        // Wait (bounded) for a timer flush already in flight — closing the store under
+        // a write would drop that batch and could leave the WAL un-checkpointed.
+        using (var drained = new ManualResetEvent(false))
+        {
+            if (_flushTimer.Dispose(drained)) drained.WaitOne(2000);
+        }
+
         Flush();
         Store.Dispose();
     }

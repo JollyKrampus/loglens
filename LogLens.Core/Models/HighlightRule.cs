@@ -120,9 +120,23 @@ public sealed class HighlightRule : ObservableObject
         Severity = Severity
     };
 
-    /// <summary>The out-of-the-box rule set: severity keywords, first match wins.</summary>
+    /// <summary>
+    /// The out-of-the-box rule set, in two tiers. The level-field tier only matches a
+    /// severity that sits in a pipe-delimited field of its own — the NLog/log4net
+    /// layout shape — so a line whose level is |Error| but whose message says
+    /// "Fatal error received" counts as an error, not a fatal: the anchored Error
+    /// rule wins before the loose Fatal keyword is ever tried. The keyword tier below
+    /// is the fallback for formats with no pipe fields. First match wins, so the
+    /// field tier must stay above the keyword tier.
+    /// </summary>
     public static List<HighlightRule> Defaults() =>
     [
+        new() { Name = "Fatal (level field)",   Pattern = LevelField("FATAL|CRITICAL"), Severity = Severity.Fatal, Foreground = "#FFFFFF", Background = "#8B1A1A", Bold = true },
+        new() { Name = "Error (level field)",   Pattern = LevelField("ERROR|SEVERE"),   Severity = Severity.Error, Foreground = "#FF8A8A", Background = "#3A1414" },
+        new() { Name = "Warning (level field)", Pattern = LevelField("WARN|WARNING"),   Severity = Severity.Warn,  Foreground = "#FFC978", Background = "#332616" },
+        new() { Name = "Info (level field)",    Pattern = LevelField("INFO"),           Severity = Severity.Info,  Foreground = "#8FD3FF" },
+        new() { Name = "Debug (level field)",   Pattern = LevelField("DEBUG|DBG"),      Severity = Severity.Debug, Foreground = "#9E9E9E" },
+        new() { Name = "Trace (level field)",   Pattern = LevelField("TRACE|VERBOSE"),  Severity = Severity.Trace, Foreground = "#6E6E6E" },
         new() { Name = "Fatal",   Pattern = @"\b(FATAL|CRITICAL|PANIC)\b",        Severity = Severity.Fatal, Foreground = "#FFFFFF", Background = "#8B1A1A", Bold = true },
         new() { Name = "Error",   Pattern = @"\b(ERROR|ERR|SEVERE|EXCEPTION)\b",  Severity = Severity.Error, Foreground = "#FF8A8A", Background = "#3A1414" },
         new() { Name = "Warning", Pattern = @"\b(WARN|WARNING)\b",                Severity = Severity.Warn,  Foreground = "#FFC978", Background = "#332616" },
@@ -131,4 +145,7 @@ public sealed class HighlightRule : ObservableObject
         new() { Name = "Trace",   Pattern = @"\b(TRACE|VERBOSE)\b",               Severity = Severity.Trace, Foreground = "#6E6E6E" },
         new() { Name = "Stack frame", Pattern = @"^\s+at\s",                      Severity = Severity.None,  Foreground = "#C58A8A" },
     ];
+
+    /// <summary>The level as its own pipe-delimited column, wherever the layout puts it.</summary>
+    private static string LevelField(string levels) => $@"(^|\|)\s*({levels})\s*\|";
 }

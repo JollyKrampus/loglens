@@ -253,14 +253,54 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool _updateHandoff;
+
+    /// <summary>
+    /// Called by the update dialog after the download is verified but BEFORE the new
+    /// exe starts. Everything the successor will want — the workspace file, the issue
+    /// database — is saved and released here, while the successor does not exist yet,
+    /// so its startup cannot collide with our shutdown. The old flow saved on Closing,
+    /// AFTER the successor was already reading the same files, and the loser of that
+    /// race died with an error dialog on the way out.
+    ///
+    /// A failed save throws: the caller aborts the update and the app keeps running,
+    /// which beats updating over unsaved views.
+    /// </summary>
+    public void PrepareForUpdateHandoff()
+    {
+        _autoSaveTimer.Stop();
+        try
+        {
+            CaptureWindowPlacement();
+            _vm.Save();
+        }
+        catch
+        {
+            _autoSaveTimer.Start();
+            throw;
+        }
+
+        _updateHandoff = true;
+        try { _alerts.Dispose(); } catch (Exception ex) { App.LogError(ex, "update handoff"); }
+        try { _issues.Dispose(); } catch (Exception ex) { App.LogError(ex, "update handoff"); }
+    }
+
     private void OnClosing(object? sender, CancelEventArgs e)
     {
+        if (_updateHandoff)
+        {
+            // Already saved and released; just stop the tailers quietly on the way out.
+            try { _vm.Dispose(); } catch (Exception ex) { App.LogError(ex, "update handoff"); }
+            return;
+        }
+
         CaptureWindowPlacement();
 
         // Views are the whole point of the app — never lose them to a stray Alt+F4.
         try { _vm.Save(); }
         catch (Exception ex)
         {
+            App.LogError(ex, "close-save");
             var r = MessageBox.Show(
                 $"Could not save the workspace:\n\n{ex.Message}\n\nClose anyway?",
                 "LogLens", MessageBoxButton.YesNo, MessageBoxImage.Warning);

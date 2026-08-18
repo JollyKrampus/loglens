@@ -80,6 +80,14 @@ public static class WorkspaceStore
 
             ws.Settings ??= new AppSettings();
             ws.Rules ??= HighlightRule.Defaults();
+
+            // Workspaces saved before 1.5.1 carry the old keyword-only defaults, which
+            // let a message mentioning "Fatal" outrank the line's real |Error| level
+            // field. If the rules are still EXACTLY those defaults — untouched in every
+            // field — swap in the current two-tier defaults. Any edit, reorder, recolour
+            // or disable means the user owns the list and it is left alone.
+            if (IsUntouchedLegacyDefaults(ws.Rules)) ws.Rules = HighlightRule.Defaults();
+
             ws.Views ??= [];
             if (ws.Views.Count == 0) ws.Views.Add(new ViewDef { Name = "Default" });
             foreach (var v in ws.Views)
@@ -93,6 +101,53 @@ public static class WorkspaceStore
         {
             throw new InvalidDataException($"Could not read workspace '{path}': {ex.Message}", ex);
         }
+    }
+
+    /// <summary>
+    /// The default rule set exactly as every release from 1.0 to 1.5.0 created it.
+    /// Order-sensitive and compared on every field (colours normalised for a possible
+    /// alpha channel), so only a genuinely untouched set matches.
+    /// </summary>
+    private static readonly (string Name, string Pattern, Severity Severity, string Fg, string Bg, bool Bold)[]
+        LegacyDefaults =
+        [
+            ("Fatal",   @"\b(FATAL|CRITICAL|PANIC)\b",       Severity.Fatal, "#FFFFFF", "#8B1A1A", true),
+            ("Error",   @"\b(ERROR|ERR|SEVERE|EXCEPTION)\b", Severity.Error, "#FF8A8A", "#3A1414", false),
+            ("Warning", @"\b(WARN|WARNING)\b",               Severity.Warn,  "#FFC978", "#332616", false),
+            ("Info",    @"\b(INFO|INFORMATION)\b",           Severity.Info,  "#8FD3FF", "",        false),
+            ("Debug",   @"\b(DEBUG|DBG)\b",                  Severity.Debug, "#9E9E9E", "",        false),
+            ("Trace",   @"\b(TRACE|VERBOSE)\b",              Severity.Trace, "#6E6E6E", "",        false),
+            ("Stack frame", @"^\s+at\s",                     Severity.None,  "#C58A8A", "",        false),
+        ];
+
+    private static bool IsUntouchedLegacyDefaults(List<HighlightRule> rules)
+    {
+        if (rules.Count != LegacyDefaults.Length) return false;
+
+        for (int i = 0; i < rules.Count; i++)
+        {
+            var (name, pattern, severity, fg, bg, bold) = LegacyDefaults[i];
+            var r = rules[i];
+
+            if (r.Name != name || r.Pattern != pattern || r.Severity != severity
+                || !r.IsRegex || r.CaseSensitive || !r.Enabled || r.Bold != bold
+                || !HexEquals(r.Foreground, fg) || !HexEquals(r.Background, bg))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>#FFCC0000 (as an older serialiser may have written it) equals #CC0000.</summary>
+    private static bool HexEquals(string? a, string? b)
+    {
+        static string Norm(string? h)
+        {
+            h = (h ?? "").Trim().TrimStart('#').ToUpperInvariant();
+            if (h.Length == 8 && h.StartsWith("FF")) h = h[2..];
+            return h;
+        }
+        return Norm(a) == Norm(b);
     }
 
     public static void Save(Workspace ws, string path)
