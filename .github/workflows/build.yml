@@ -82,7 +82,12 @@ jobs:
           for rid in osx-arm64 osx-x64; do
             dotnet publish LogLens.Avalonia/LogLens.Avalonia.csproj -c Release -r $rid \
               --self-contained -p:PublishSingleFile=true -p:DebugType=none -o "out/$rid"
-            chmod +x "out/$rid/LogLens.Avalonia"
+            # The binary is the whole app; "LogLens.Avalonia" made people think they
+            # had to install Avalonia. Renaming the apphost is safe — the bundle it
+            # loads is inside its own file.
+            mv "out/$rid/LogLens.Avalonia" "out/$rid/LogLens"
+            chmod +x "out/$rid/LogLens"
+            cp packaging/macos-readme.txt "out/$rid/README.txt"
             tar -czf "LogLens-macos-$rid.tar.gz" -C "out/$rid" .
           done
           shasum -a 256 LogLens-macos-*.tar.gz > SHA256SUMS-macos.txt

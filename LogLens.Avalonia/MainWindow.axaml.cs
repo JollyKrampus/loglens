@@ -15,6 +15,7 @@ public partial class MainWindow : Window
 {
     private readonly MainVm _vm;
     private readonly IssueRecorder _issues;
+    private bool _formatHintShown;
     private readonly DispatcherTimer _autoSaveTimer;
     private readonly DispatcherTimer _toastTimer;
 
@@ -31,6 +32,7 @@ public partial class MainWindow : Window
 
         _vm = new MainVm(ws, path, new AvaloniaUiThread());
         _vm.UserMessage += Notify;
+        _vm.FormatHint += m => { if (!_formatHintShown) { _formatHintShown = true; Notify(m); } };
         DataContext = _vm;
 
         var dbPath = Path.Combine(

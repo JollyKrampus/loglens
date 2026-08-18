@@ -13,7 +13,7 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>LogLens</RootNamespace>
     <AssemblyName>LogLens.Core</AssemblyName>
-    <Version>1.5.1</Version>
+    <Version>1.5.2</Version>
   </PropertyGroup>
 
   <ItemGroup>

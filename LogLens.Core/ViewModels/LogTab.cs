@@ -161,9 +161,26 @@ public sealed class LogTab : LogPaneVm
         Ingest(copy);
     }
 
+    /// <summary>
+    /// The file looks pipe-delimited (NLog/log4net) but the active rules still use
+    /// loose keyword matching — the shell shows the message once as a nudge towards
+    /// the anchored preset. Checked once, on the first batch big enough to judge.
+    /// </summary>
+    public event Action<string>? FormatHintDetected;
+    private bool _formatHintChecked;
+
     private void Ingest(IReadOnlyList<string> texts)
     {
         if (texts.Count == 0) { RaiseStats(); return; }
+
+        if (!_formatHintChecked && texts.Count >= 5)
+        {
+            _formatHintChecked = true;
+            if (Rules.HasLooseSeverityRules && RuleSet.LooksPipeLevelled(texts))
+                FormatHintDetected?.Invoke(
+                    $"{Header} looks pipe-delimited — Tools ▸ Highlight rules ▸ Load preset ▸ "
+                    + "NLog / log4net matches the level field exactly");
+        }
 
         var built = new List<LogLine>(texts.Count);
 

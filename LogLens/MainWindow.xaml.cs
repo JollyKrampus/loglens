@@ -38,6 +38,14 @@ public partial class MainWindow : Window
 
         _vm = new MainVm(ws, path, new WpfUiThread());
         _vm.UserMessage += m => MessageBox.Show(m, "LogLens", MessageBoxButton.OK, MessageBoxImage.Information);
+        _vm.FormatHint += m =>
+        {
+            // Once per session: with 40 files in a view, one nudge is a hint and
+            // forty are a nuisance.
+            if (_formatHintShown) return;
+            _formatHintShown = true;
+            Notify(m);
+        };
         DataContext = _vm;
 
         App.ApplyTheme(_vm.Settings.LightTheme);
@@ -257,6 +265,7 @@ public partial class MainWindow : Window
     }
 
     private bool _updateHandoff;
+    private bool _formatHintShown;
 
     /// <summary>
     /// Called by the update dialog after the download is verified but BEFORE the new
