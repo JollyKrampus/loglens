@@ -85,6 +85,8 @@
         <CheckBox Content="Show line numbers" Margin="0,4" IsChecked="{Binding ShowLineNumbers}" />
         <CheckBox Content="Word wrap" Margin="0,4" IsChecked="{Binding WordWrap}" />
         <CheckBox Content="Light theme" Margin="0,4" IsChecked="{Binding LightTheme}" />
+        <CheckBox Content="Check for updates at startup" Margin="0,4" IsChecked="{Binding CheckForUpdates}"
+                  ToolTip="One quiet lookup against the GitHub releases page. Finding something only shows a status-bar note — nothing downloads without you asking." />
 
         <TextBlock Text="ISSUE TRACKING" Style="{StaticResource SectionHeader}" Margin="0,14,0,8" />
 

@@ -94,6 +94,7 @@
 
             <MenuItem Header="_Help">
                 <MenuItem Header="_Shortcuts and tips" Click="Help_Click" />
+                <MenuItem Header="Check for _updates…" Click="CheckUpdates_Click" />
                 <MenuItem Header="_About" Click="About_Click" />
             </MenuItem>
         </Menu>
@@ -102,6 +103,14 @@
         <Border DockPanel.Dock="Bottom" Background="{DynamicResource App.BgAlt}"
                 BorderBrush="{DynamicResource App.Border}" BorderThickness="0,1,0,0" Padding="8,3">
             <DockPanel>
+                <!-- Visible while the initial tail reads are still arriving. -->
+                <StackPanel x:Name="LoadingPanel" DockPanel.Dock="Left" Orientation="Horizontal"
+                            Visibility="Collapsed" Margin="0,0,12,0">
+                    <ProgressBar x:Name="LoadingBar" Width="110" Height="8" Minimum="0"
+                                 VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBlock x:Name="LoadingText" Style="{StaticResource Dim}" />
+                </StackPanel>
+
                 <TextBlock Text="{Binding WorkspacePath}" Style="{StaticResource Dim}"
                            TextTrimming="CharacterEllipsis" ToolTip="{Binding WorkspacePath}" />
                 <TextBlock x:Name="Toast" DockPanel.Dock="Right" Style="{StaticResource Dim}" />

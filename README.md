@@ -14,6 +14,28 @@ No installer, no service, no account, no telemetry, no licence.
 Built binaries are on the [releases page](https://github.com/JollyKrampus/loglens/releases) —
 download `LogLens.exe` and run it. Nothing to install.
 
+### Updating
+
+LogLens checks the releases page once, quietly, a few seconds after startup (turn
+this off in Settings). If something newer exists you get a status-bar note — nothing
+downloads without you asking. **Help ▸ Check for updates…** shows the update dialog:
+one click downloads the new exe, verifies it against the release's published SHA-256
+checksum, swaps it in place **right where the exe lives**, and restarts. Your
+workspace and issue database are untouched.
+
+The swap needs no installer and no admin rights: Windows allows renaming a running
+executable, so the old exe becomes `LogLens.exe.old` (cleaned up on next start) and
+the verified download takes its place. If the folder is read-only, the update tells
+you instead of failing halfway.
+
+### Workspace compatibility
+
+The workspace format is a contract — teams share these files across versions. New
+settings are always additive with sensible defaults, so **older workspaces load in
+newer versions unchanged**, and unknown fields written by a newer version are ignored
+rather than fatal, so downgrade also works. CI enforces this: a test loads a
+workspace exactly as v1.1.0 wrote one and fails the build if anything is lost.
+
 ### Windows will warn you the first time
 
 Windows tags anything downloaded from a browser with the *Mark of the Web*, and
@@ -137,6 +159,7 @@ the path in use.
 | **F / E / W / I / D chips** | Severity filter — any combination at once, so "errors, warnings and fatals only" is three clicks. Stack traces and other unclassified lines follow the line they belong to, so filtering to errors keeps each error's trace attached. All chips on = show everything. |
 | **Editor** | Opens the tab's log file in your default editor (Notepad if nothing is associated with `.log`). Also on the right-click menu, along with "Show in File Explorer". A wildcard tab opens whichever file it is tailing right now. |
 | **Find** | `Ctrl+F`. Enter for next, Shift+Enter for previous, with a match count. |
+| **Opening logs… n/m** | Status-bar progress while the initial tail reads run — with dozens of large files that phase is what makes startup feel slow. If it drags, lower **Load at most N KB when opening** in Settings: 40 files × 2 MB initial window is 80 MB of reads. |
 
 Drag log files onto the window to add them to the current view.
 

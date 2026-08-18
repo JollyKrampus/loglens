@@ -67,7 +67,95 @@ public partial class MainWindow : Window
         _issues = new IssueRecorder(new IssueStore(dbPath), _vm.Settings);
         _vm.LinesIngested += (view, tab, lines) => _issues.Observe(view.Name, tab.Header, lines);
 
+        // A previous self-update may have left LogLens.exe.old behind.
+        UpdateService.CleanUpLeftovers();
+
+        StartLoadingProgress();
+        Loaded += (_, __) => _ = QuietUpdateCheckAsync();
+
         Closing += OnClosing;
+    }
+
+    // ================= startup loading progress =================
+
+    private DispatcherTimer? _loadingTimer;
+
+    /// <summary>
+    /// Shows "Opening logs… n/m" in the status bar while the initial tail reads are
+    /// running — with dozens of large files that phase is what makes startup feel
+    /// slow. Polling beats wiring per-tab events for something this transient.
+    /// </summary>
+    private void StartLoadingProgress()
+    {
+        _loadingTimer?.Stop();
+
+        var startedAt = DateTime.UtcNow;
+        _loadingTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        _loadingTimer.Tick += (_, __) =>
+        {
+            var tabs = _vm.Views.SelectMany(v => v.FileTabs).ToList();
+            int total = tabs.Count;
+            int primed = tabs.Count(t => t.IsPrimed);
+
+            bool done = total == 0 || primed >= total
+                        || DateTime.UtcNow - startedAt > TimeSpan.FromMinutes(2);
+
+            if (done)
+            {
+                _loadingTimer!.Stop();
+                LoadingPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            LoadingPanel.Visibility = Visibility.Visible;
+            LoadingBar.Maximum = total;
+            LoadingBar.Value = primed;
+            LoadingText.Text = $"Opening logs… {primed}/{total}";
+        };
+        _loadingTimer.Start();
+    }
+
+    // ================= updates =================
+
+    private async Task QuietUpdateCheckAsync()
+    {
+        if (!_vm.Settings.CheckForUpdates) return;
+
+        try
+        {
+            // Let the tailers claim startup I/O first.
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            var update = await UpdateService.CheckAsync();
+            if (update is not null)
+                Notify($"LogLens {update.Latest} is available — Help ▸ Check for updates");
+        }
+        catch
+        {
+            // Offline, rate-limited, GitHub down: a quiet check stays quiet.
+        }
+    }
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Notify("Checking…");
+            var update = await UpdateService.CheckAsync();
+
+            if (update is null)
+            {
+                Notify($"You're on the latest version ({UpdateService.CurrentVersion})");
+                return;
+            }
+
+            Notify("");
+            var dlg = new UpdateWindow(update) { Owner = this };
+            dlg.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            Notify("Update check failed: " + ex.Message);
+        }
     }
 
     private readonly AlertService _alerts;
@@ -174,6 +262,7 @@ public partial class MainWindow : Window
 
         try { _vm.Save(); } catch { /* best effort */ }
         _vm.NewWorkspace();
+        StartLoadingProgress();
         Notify("New workspace");
     }
 
@@ -194,6 +283,7 @@ public partial class MainWindow : Window
             _vm.Save();
             _vm.Open(dlg.FileName);
             App.ApplyTheme(_vm.Settings.LightTheme);
+            StartLoadingProgress();
             Notify("Workspace opened");
         }
         catch (Exception ex)
