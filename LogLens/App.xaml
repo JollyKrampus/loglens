@@ -22,6 +22,9 @@
             <c:PositiveToVisibilityConverter x:Key="PositiveToVis" />
             <c:PositiveToVisibilityConverter x:Key="ZeroToVis" Invert="True" />
             <c:HexToBrushConverter x:Key="HexToBrush" />
+            <c:CachedHexBrushConverter x:Key="CachedHexBrush" />
+            <c:CachedHexBrushConverter x:Key="CachedHexBg" TransparentFallback="True" />
+            <c:BoolToFontWeightConverter x:Key="BoolToWeight" />
             <c:LineNumberWidthConverter x:Key="LineNumberWidth" />
             <c:StringToFontFamilyConverter x:Key="StringToFontFamily" />
         </ResourceDictionary>

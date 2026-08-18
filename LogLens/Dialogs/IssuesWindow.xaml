@@ -27,6 +27,11 @@
             <ToggleButton DockPanel.Dock="Left" x:Name="WarnFilter" Margin="0,0,14,0" Padding="12,4"
                           Click="Filter_Changed" ToolTip="Warning issues" />
 
+            <TextBlock DockPanel.Dock="Left" Text="View" Style="{StaticResource Dim}" Margin="0,0,6,0" />
+            <ComboBox DockPanel.Dock="Left" x:Name="ViewFilter" Width="130" Margin="0,0,14,0"
+                      SelectionChanged="Filter_Changed"
+                      ToolTip="Issues are kept separately per view — a bug fixed in Dev can still be live in Prod, and Dev noise must not pollute the Prod list." />
+
             <CheckBox DockPanel.Dock="Left" x:Name="HideFiled" Content="Hide filed" Margin="0,0,12,0"
                       Click="Filter_Changed"
                       ToolTip="Hide issues that already have a Jira key recorded." />
@@ -52,6 +57,7 @@
                       RowHeight="24" SelectionChanged="Grid_SelectionChanged">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Sev" Width="52" Binding="{Binding Severity}" />
+                    <DataGridTextColumn Header="View" Width="80" Binding="{Binding View}" />
                     <DataGridTextColumn Header="Count" Width="70"
                                         Binding="{Binding Count, StringFormat=N0}" />
                     <DataGridTextColumn Header="Title" Width="*" Binding="{Binding Title}" />

@@ -51,8 +51,8 @@ public static class JiraTemplate
         sb.AppendLine($"|Last seen|{issue.LastSeenLocal:yyyy-MM-dd HH:mm:ss}|");
         sb.AppendLine($"|Duration|{Describe(issue.LastSeenLocal - issue.FirstSeenLocal)}|");
 
-        if (!string.IsNullOrWhiteSpace(issue.Views))
-            sb.AppendLine($"|Environments|{Escape(issue.Views)}|");
+        if (!string.IsNullOrWhiteSpace(issue.View))
+            sb.AppendLine($"|Environment|{Escape(issue.View)}|");
         if (!string.IsNullOrWhiteSpace(issue.Sources))
             sb.AppendLine($"|Log files|{Escape(issue.Sources)}|");
         if (!string.IsNullOrWhiteSpace(issue.ExceptionType))
@@ -116,7 +116,7 @@ public static class JiraTemplate
         sb.AppendLine($"Occurrences  : {issue.Count:N0}");
         sb.AppendLine($"First seen   : {issue.FirstSeenLocal:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine($"Last seen    : {issue.LastSeenLocal:yyyy-MM-dd HH:mm:ss}");
-        if (!string.IsNullOrWhiteSpace(issue.Views)) sb.AppendLine($"Environments : {issue.Views}");
+        if (!string.IsNullOrWhiteSpace(issue.View)) sb.AppendLine($"Environment  : {issue.View}");
         if (!string.IsNullOrWhiteSpace(issue.Sources)) sb.AppendLine($"Log files    : {issue.Sources}");
         if (!string.IsNullOrWhiteSpace(issue.ExceptionType)) sb.AppendLine($"Exception    : {issue.ExceptionType}");
         if (!string.IsNullOrWhiteSpace(issue.FaultingMethod)) sb.AppendLine($"Method       : {issue.FaultingMethod}");

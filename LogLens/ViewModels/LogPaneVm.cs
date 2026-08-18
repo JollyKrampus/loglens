@@ -200,6 +200,36 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
 
     public Action? RequestScrollToEnd;
 
+    /// <summary>The pane's control selects and scrolls to this display index.</summary>
+    public Action<int>? RevealIndexRequested;
+
+    public enum RevealOutcome { Revealed, HiddenByFilters, NotInBuffer }
+
+    /// <summary>
+    /// Finds a line by its original file-tab number and asks the pane to show it.
+    /// The number is unique, so repeated identical lines cannot land on the wrong
+    /// occurrence. The outcome distinguishes "shown", "in the buffer but hidden by
+    /// this tab's filters", and "trimmed away" — callers surface the last two
+    /// instead of leaving the user staring at an unexplained tab switch.
+    /// </summary>
+    public RevealOutcome RevealLineByNumber(long sourceLineNumber)
+    {
+        for (int i = Display.Count - 1; i >= 0; i--)
+        {
+            if (Display[i].SourceLineNumber == sourceLineNumber)
+            {
+                FollowTail = false;
+                RevealIndexRequested?.Invoke(i);
+                return RevealOutcome.Revealed;
+            }
+        }
+
+        for (int i = All.Count - 1; i >= 0; i--)
+            if (All[i].SourceLineNumber == sourceLineNumber) return RevealOutcome.HiddenByFilters;
+
+        return RevealOutcome.NotInBuffer;
+    }
+
     protected bool FilterActive => _matcher.Active;
     protected bool PassesFilter(string text) => _matcher.Passes(text);
 

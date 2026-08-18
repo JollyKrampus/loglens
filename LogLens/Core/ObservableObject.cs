@@ -1,24 +1,9 @@
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using System.Windows.Input;
 
 namespace LogLens.Core;
 
-public abstract class ObservableObject : INotifyPropertyChanged
-{
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    protected void Raise([CallerMemberName] string? name = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-
-    protected bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
-        field = value;
-        Raise(name);
-        return true;
-    }
-}
+// ObservableObject itself lives in LogLens.Core (the cross-platform library);
+// only this WPF-specific command helper stays in the app.
 
 /// <summary>Minimal ICommand so we don't drag in an MVVM framework.</summary>
 public sealed class RelayCommand : ICommand

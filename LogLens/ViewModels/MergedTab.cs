@@ -40,6 +40,13 @@ public sealed class MergedTab : LogPaneVm
 
     public Action? ReloadAllRequested;
 
+    /// <summary>Set by the owning view: switches to a file tab and reveals a line there.</summary>
+    public Action<LogTab, LogLine>? NavigateToSourceRequested;
+
+    /// <summary>The file tab a merged line came from, resolved by its source index.</summary>
+    public LogTab? SourceTabFor(LogLine? line)
+        => line is null ? null : _sources.FirstOrDefault(t => t.SourceIndex == line.SourceIndex);
+
     public MergedTab(AppSettings settings, Func<string> describeSources) : base(settings)
     {
         _describeSources = describeSources;
@@ -139,10 +146,13 @@ public sealed class MergedTab : LogPaneVm
         UpdateStatus();
     }
 
-    /// <summary>Re-numbers a line for the merged view and stamps its current source.</summary>
+    /// <summary>
+    /// Re-numbers a line for the merged view and stamps its current source, keeping
+    /// the original file-tab number so navigation back to the source is exact.
+    /// </summary>
     private LogLine Stamp(LogTab tab, LogLine line)
         => new(_nextNumber++, line.Text, line.Rule, line.Timestamp,
-               tab.Header, tab.SourceIndex, tab.SourceBrush);
+               tab.Header, tab.SourceIndex, tab.SourceColor, line.SourceLineNumber);
 
     // ---- release ----------------------------------------------------------------
 

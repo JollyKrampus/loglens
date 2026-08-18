@@ -100,8 +100,11 @@ public sealed class AlertSettings : ObservableObject
     private string _customPattern = "";
     private bool _showToast = true;
     private bool _playSound = true;
-    private string _soundName = Services.SoundLibrary.DefaultSound;
-    private string _fatalSoundName = Services.SoundLibrary.DefaultFatalSound;
+    // Literals rather than SoundLibrary constants: SoundLibrary is Windows-only and
+    // lives in the app, while this model is cross-platform. The app's SoundLibrary
+    // declares the same values as its defaults.
+    private string _soundName = "Windows Notify.wav";
+    private string _fatalSoundName = "Windows Critical Stop.wav";
     private bool _useDistinctFatalSound = true;
     private bool _flashTaskbar = true;
     private bool _onlyWhenUnfocused = true;

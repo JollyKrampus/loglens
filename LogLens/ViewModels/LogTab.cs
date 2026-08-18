@@ -1,4 +1,3 @@
-using System.Windows.Media;
 using LogLens.Models;
 using LogLens.Services;
 
@@ -22,7 +21,7 @@ public sealed class LogTab : LogPaneVm
     public int SourceIndex { get; set; }
 
     /// <summary>Colour for this file in the merged view's source column.</summary>
-    public Brush SourceBrush { get; set; } = Brushes.Gray;
+    public string SourceColor { get; set; } = "#9E9E9E";
 
     public event Action<LinesAppendedEventArgs>? LinesAppended;
 
@@ -176,7 +175,7 @@ public sealed class LogTab : LogPaneVm
             // together instead of scattering it across the merged timeline.
             var ts = _clock.Read(text) ?? _clock.Last;
 
-            built.Add(new LogLine(_nextNumber++, text, rule, ts, Source.Name, SourceIndex, SourceBrush));
+            built.Add(new LogLine(_nextNumber++, text, rule, ts, Source.Name, SourceIndex, SourceColor));
         }
 
         AppendLines(built, out int newAlerts);
