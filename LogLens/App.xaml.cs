@@ -11,6 +11,11 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // After a self-update the predecessor is still saving its workspace and
+        // checkpointing the issue database as we start; wait it out before touching
+        // either. No-op on a normal launch.
+        Services.UpdateService.WaitForPredecessor(e.Args);
+
         DispatcherUnhandledException += OnDispatcherException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             LogCrash(args.ExceptionObject as Exception, "AppDomain");

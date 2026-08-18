@@ -95,7 +95,21 @@ public sealed class IssueStore : IDisposable
             Cache = SqliteCacheMode.Shared
         }.ToString();
 
-        Initialise();
+        // A closing predecessor (during a self-update handoff from a version that
+        // doesn't signal us) can hold the database for a moment. Retry briefly
+        // rather than greeting the user with a crash dialog on first launch.
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                Initialise();
+                break;
+            }
+            catch (SqliteException) when (attempt < 10)
+            {
+                Thread.Sleep(300);
+            }
+        }
     }
 
     private SqliteConnection Open()

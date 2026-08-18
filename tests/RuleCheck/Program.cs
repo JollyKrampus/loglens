@@ -886,12 +886,36 @@ internal static class Program
             Report(true, "an unknown property from a future version is ignored, not fatal",
                 "load would have thrown before reaching here");
 
+            // A workspace from before pane-state persistence must default to
+            // everything-visible, not crash or hide lines.
+            var pane = ws.Views[0].Sources[0].Pane;
+            Report(pane is not null && pane.ShowFatal && pane.ShowInfo && pane.ShowDebug
+                   && pane.FollowTail && pane.Include == "",
+                "a pre-1.5 workspace gets default pane state (all severities shown)",
+                pane is null ? "Pane was null" : $"fatal={pane.ShowFatal} include='{pane.Include}'");
+
+            // Chips and filters must round-trip through the file.
+            pane!.ShowInfo = false;
+            pane.ShowDebug = false;
+            pane.Include = "payment";
+            pane.FilterIsRegex = true;
+            ws.Views[0].MergedPane.ShowWarn = false;
+            ws.Settings.AutoSaveWorkspace = false;
+
             // Round-trip: what this version saves must itself reload.
             WorkspaceStore.Save(ws, path);
             var again = WorkspaceStore.Load(path);
             Report(again.Views.Count == 1 && again.Settings.PollIntervalMs == 300,
                 "saving and reloading with the current version loses nothing",
                 $"views={again.Views.Count} poll={again.Settings.PollIntervalMs}");
+
+            var paneAgain = again.Views[0].Sources[0].Pane;
+            Report(!paneAgain.ShowInfo && !paneAgain.ShowDebug && paneAgain.ShowError
+                   && paneAgain.Include == "payment" && paneAgain.FilterIsRegex
+                   && !again.Views[0].MergedPane.ShowWarn
+                   && !again.Settings.AutoSaveWorkspace,
+                "severity chips, filters and auto-save round-trip through the workspace file",
+                $"info={paneAgain.ShowInfo} include='{paneAgain.Include}' mergedWarn={again.Views[0].MergedPane.ShowWarn}");
         }
         finally
         {

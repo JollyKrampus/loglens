@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using LogLens.Core;
 using LogLens.Dialogs;
 using LogLens.Models;
 using LogLens.Services;
@@ -35,7 +36,8 @@ public partial class MainWindow : Window
             ws = Workspace.CreateDefault();
         }
 
-        _vm = new MainVm(ws, path);
+        _vm = new MainVm(ws, path, new WpfUiThread());
+        _vm.UserMessage += m => MessageBox.Show(m, "LogLens", MessageBoxButton.OK, MessageBoxImage.Information);
         DataContext = _vm;
 
         App.ApplyTheme(_vm.Settings.LightTheme);
@@ -73,8 +75,26 @@ public partial class MainWindow : Window
         StartLoadingProgress();
         Loaded += (_, __) => _ = QuietUpdateCheckAsync();
 
+        // Auto-save: a few seconds after anything marks the workspace dirty — views,
+        // rules, chips, filters — it lands on disk without a Ctrl+S. The close-time
+        // save remains regardless.
+        _autoSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _autoSaveTimer.Tick += (_, __) =>
+        {
+            if (!_vm.Dirty || !_vm.Settings.AutoSaveWorkspace) return;
+            try
+            {
+                CaptureWindowPlacement();
+                _vm.Save();
+            }
+            catch { /* a transiently locked file just waits for the next tick */ }
+        };
+        _autoSaveTimer.Start();
+
         Closing += OnClosing;
     }
+
+    private readonly DispatcherTimer _autoSaveTimer;
 
     // ================= startup loading progress =================
 

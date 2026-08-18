@@ -1,6 +1,4 @@
 using System.Text.RegularExpressions;
-using System.Windows;
-using System.Windows.Threading;
 using LogLens.Core;
 using LogLens.Models;
 using LogLens.Services;
@@ -72,7 +70,7 @@ internal sealed class FilterMatcher
 /// </summary>
 public abstract class LogPaneVm : ObservableObject, IDisposable
 {
-    protected readonly Dispatcher Ui = Application.Current.Dispatcher;
+    protected readonly IUiThread Ui;
     protected readonly AppSettings Settings;
     protected readonly List<LogLine> All = new();
 
@@ -89,9 +87,10 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
     private string? _filterError;
     private int _alertCount;
 
-    protected LogPaneVm(AppSettings settings)
+    protected LogPaneVm(AppSettings settings, IUiThread ui)
     {
         Settings = settings;
+        Ui = ui;
         Filter = new FilterSpec();
         _matcher = new FilterMatcher(Filter);
         Filter.PropertyChanged += (_, __) => ApplyFilter();
@@ -183,6 +182,51 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
         Raise(nameof(ShowInfo));
         Raise(nameof(ShowDebug));
         Rebuild();
+    }
+
+    /// <summary>Restores persisted chips, filters and follow. Call once after start.</summary>
+    public void ApplyPaneState(PaneState s)
+    {
+        var mask = SeverityClasses.None;
+        if (s.ShowFatal) mask |= SeverityClasses.Fatal;
+        if (s.ShowError) mask |= SeverityClasses.Error;
+        if (s.ShowWarn) mask |= SeverityClasses.Warn;
+        if (s.ShowInfo) mask |= SeverityClasses.Info;
+        if (s.ShowDebug) mask |= SeverityClasses.Debug;
+
+        // Filter property setters each trigger a rebuild; that's fine at load time
+        // when the buffer is still empty or tiny.
+        Filter.Include = s.Include;
+        Filter.Exclude = s.Exclude;
+        Filter.IsRegex = s.FilterIsRegex;
+        Filter.CaseSensitive = s.FilterCaseSensitive;
+        FollowTail = s.FollowTail;
+
+        if (mask != _severityMask)
+        {
+            _severityMask = mask;
+            Raise(nameof(ShowFatal));
+            Raise(nameof(ShowError));
+            Raise(nameof(ShowWarn));
+            Raise(nameof(ShowInfo));
+            Raise(nameof(ShowDebug));
+            Rebuild();
+        }
+    }
+
+    /// <summary>Writes the live state back into the model before the workspace saves.</summary>
+    public void CapturePaneState(PaneState s)
+    {
+        s.ShowFatal = ShowFatal;
+        s.ShowError = ShowError;
+        s.ShowWarn = ShowWarn;
+        s.ShowInfo = ShowInfo;
+        s.ShowDebug = ShowDebug;
+        s.Include = Filter.Include;
+        s.Exclude = Filter.Exclude;
+        s.FilterIsRegex = Filter.IsRegex;
+        s.FilterCaseSensitive = Filter.CaseSensitive;
+        s.FollowTail = FollowTail;
     }
 
     public int TotalLines => All.Count;

@@ -1,4 +1,4 @@
-using System.Windows.Threading;
+using LogLens.Core;
 using LogLens.Models;
 
 namespace LogLens.ViewModels;
@@ -30,7 +30,7 @@ public sealed class MergedTab : LogPaneVm
 
     private readonly List<Held> _held = new();
     private readonly List<LogTab> _sources = new();
-    private readonly DispatcherTimer _flushTimer;
+    private readonly System.Threading.Timer _flushTimer;
     private readonly Func<string> _describeSources;
 
     private DateTime? _lastReleased;
@@ -47,16 +47,13 @@ public sealed class MergedTab : LogPaneVm
     public LogTab? SourceTabFor(LogLine? line)
         => line is null ? null : _sources.FirstOrDefault(t => t.SourceIndex == line.SourceIndex);
 
-    public MergedTab(AppSettings settings, Func<string> describeSources) : base(settings)
+    public MergedTab(AppSettings settings, Func<string> describeSources, IUiThread ui) : base(settings, ui)
     {
         _describeSources = describeSources;
 
-        _flushTimer = new DispatcherTimer(DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromMilliseconds(200)
-        };
-        _flushTimer.Tick += (_, __) => Release(false);
-        _flushTimer.Start();
+        // A plain threadpool timer posting to the UI thread — DispatcherTimer was the
+        // last WPF dependency in the view-model layer.
+        _flushTimer = new System.Threading.Timer(_ => Ui.Post(() => Release(false)), null, 200, 200);
     }
 
     public override string Header => "Merged";
@@ -288,7 +285,7 @@ public sealed class MergedTab : LogPaneVm
 
     public override void Dispose()
     {
-        _flushTimer.Stop();
+        _flushTimer.Dispose();
         foreach (var t in _sources) t.LinesAppended -= OnSourceLines;
         _sources.Clear();
         base.Dispose();

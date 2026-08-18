@@ -3,6 +3,25 @@ using LogLens.Core;
 
 namespace LogLens.Models;
 
+/// <summary>
+/// Per-pane display state that persists in the workspace: the severity chips, the
+/// Show/Hide filters, and follow. Plain POCO — the pane view-model applies it on
+/// start and captures back into it on save.
+/// </summary>
+public sealed class PaneState
+{
+    public bool ShowFatal { get; set; } = true;
+    public bool ShowError { get; set; } = true;
+    public bool ShowWarn { get; set; } = true;
+    public bool ShowInfo { get; set; } = true;
+    public bool ShowDebug { get; set; } = true;
+    public string Include { get; set; } = "";
+    public string Exclude { get; set; } = "";
+    public bool FilterIsRegex { get; set; }
+    public bool FilterCaseSensitive { get; set; }
+    public bool FollowTail { get; set; } = true;
+}
+
 /// <summary>A file (or wildcard) being tailed inside a view.</summary>
 public sealed class LogSource : ObservableObject
 {
@@ -30,6 +49,9 @@ public sealed class LogSource : ObservableObject
             catch { return "(no file)"; }
         }
     }
+
+    /// <summary>This tab's chips, filters and follow, persisted with the workspace.</summary>
+    public PaneState Pane { get; set; } = new();
 
     public LogSource Clone() => new() { Name = _name, Path = _path };
 }
@@ -80,6 +102,9 @@ public sealed class ViewDef : ObservableObject
 
     /// <summary>Rules that apply on top of the workspace-wide rules, evaluated first.</summary>
     public List<HighlightRule> Rules { get; set; } = [];
+
+    /// <summary>The merged timeline's chips and filters, persisted like any tab's.</summary>
+    public PaneState MergedPane { get; set; } = new();
 
     public ViewDef Clone() => new()
     {
@@ -212,6 +237,15 @@ public sealed class AppSettings : ObservableObject
     /// only produces a status-bar note — never a download without you asking.
     /// </summary>
     public bool CheckForUpdates { get => _checkForUpdates; set => Set(ref _checkForUpdates, value); }
+
+    private bool _autoSaveWorkspace = true;
+
+    /// <summary>
+    /// Save the workspace automatically a few seconds after anything changes —
+    /// views, rules, chips, filters. On by default; the close-time save remains
+    /// either way.
+    /// </summary>
+    public bool AutoSaveWorkspace { get => _autoSaveWorkspace; set => Set(ref _autoSaveWorkspace, value); }
 }
 
 /// <summary>Everything persisted to loglens.workspace.json.</summary>
