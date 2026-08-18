@@ -131,6 +131,47 @@ internal static class Program
         ExpectRule(generic, " ---> System.TimeoutException: A task was canceled.",
             "Inner exception", Severity.None, "a real inner-exception continuation line stays None");
 
+        // ---- the reported multi-line NLog event, verbatim ----------------------
+        // The event line carries |ERROR|; the captured STDOUT spills onto later
+        // lines with no timestamp and no level field. Continuation matching must
+        // keep the spill from minting a fresh FATAL.
+
+        Section("Multi-line events: continuations cannot declare severity");
+
+        const string reportedEventLine =
+            "2026-08-18 15:30:31.9153|ERROR|CorrespondenceSystem.CompositionService.Consumers.GetComposition|CorrespondenceSystem.CompositionService.Models.CompositionExitCodeException: Exstream exit code (12) did not indicate successful run. Path to engine run: D:\\CorrespondenceSystem\\DriversUAT01\\2026\\08\\18\\FacetsEnrollment\\Print\\946e7902-7d9c-4500-91e1-738f4dc5746f\\0";
+        const string reportedStdoutLine =
+            "STDOUT: ******Fatal error received trying to read the package file: ExstreamPackage.pub. *******";
+
+        Expect(generic, reportedEventLine, Severity.Error,
+            "the reported |ERROR| event line classifies as Error");
+
+        var stdoutAsContinuation = generic.Match(reportedStdoutLine, isContinuation: true);
+        Report(stdoutAsContinuation is null,
+            "the STDOUT spill line, as a continuation, gets NO severity",
+            $"matched '{stdoutAsContinuation?.Name}'/{stdoutAsContinuation?.Severity}");
+
+        var stdoutAsEvent = generic.Match(reportedStdoutLine, isContinuation: false);
+        Report(stdoutAsEvent?.Severity == Severity.Fatal,
+            "the same text in a timestampless file still keyword-matches (documented fallback)",
+            $"matched '{stdoutAsEvent?.Name}'/{stdoutAsEvent?.Severity}");
+
+        var frameAsContinuation = generic.Match(
+            "   at CorrespondenceSystem.CompositionService.Internal.ProcessTimer.WatchDirectoryAndKillHungProcess(IProcess process, String watchDir, TimeSpan overallRunTimeout, Nullable`1 singleFileTimeout) in D:\\a\\crsp-compositionservice\\crsp-compositionservice\\CorrespondenceSystem.CompositionService\\Internal\\ProcessTimer.cs:line 60",
+            isContinuation: true);
+        Report(frameAsContinuation?.Name == "Stack frame",
+            "pure-highlight rules still colour continuation lines",
+            $"matched '{frameAsContinuation?.Name}'");
+
+        // The continuation signal itself: the event line has a readable timestamp,
+        // the STDOUT line does not.
+        var clock = new TimestampExtractor();
+        var eventTs = clock.Read(reportedEventLine);
+        var stdoutTs = clock.Read(reportedStdoutLine);
+        Report(eventTs is not null && stdoutTs is null,
+            "the timestamp extractor separates the event line from its spill",
+            $"event={eventTs?.ToString() ?? "null"} stdout={stdoutTs?.ToString() ?? "null"}");
+
         // ---- pipe-format detection (drives the status-bar preset hint) ---------
 
         Section("Pipe-format detection");

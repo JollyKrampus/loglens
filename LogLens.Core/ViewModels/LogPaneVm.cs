@@ -393,7 +393,7 @@ public abstract class LogPaneVm : ObservableObject, IDisposable
             var l = All[i];
 
             // Re-resolve the rule so edits to highlighting show up immediately.
-            var rule = Rules.Match(l.Text);
+            var rule = Rules.Match(l.Text, l.IsContinuation);
             if (!ReferenceEquals(rule, l.Rule))
             {
                 l = l.WithRule(rule);

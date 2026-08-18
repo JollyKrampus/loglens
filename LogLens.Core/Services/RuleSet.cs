@@ -10,12 +10,14 @@ namespace LogLens.Services;
 public sealed class RuleSet
 {
     private readonly List<HighlightRule> _rules;
+    private readonly bool[] _loose;
 
     public RuleSet(IEnumerable<HighlightRule> viewRules, IEnumerable<HighlightRule> globalRules)
     {
         _rules = viewRules.Concat(globalRules).Where(r => r.Enabled).ToList();
-        HasLooseSeverityRules = _rules.Any(r =>
-            r.Severity != Severity.None && (!r.IsRegex || !r.Pattern.Contains(@"(^|\|)")));
+        _loose = _rules.Select(r =>
+            r.Severity != Severity.None && (!r.IsRegex || !r.Pattern.Contains(@"(^|\|)"))).ToArray();
+        HasLooseSeverityRules = _loose.Any(l => l);
     }
 
     public static readonly RuleSet Empty = new([], []);
@@ -27,10 +29,22 @@ public sealed class RuleSet
     /// </summary>
     public bool HasLooseSeverityRules { get; }
 
-    public HighlightRule? Match(string line)
+    public HighlightRule? Match(string line) => Match(line, isContinuation: false);
+
+    /// <summary>
+    /// Continuation lines — lines with no timestamp of their own in a file whose
+    /// lines normally carry one — are not log events, so a loose severity keyword
+    /// inside them must not count: "STDOUT: ****Fatal error received..." spilling
+    /// under an |ERROR| event is detail of that error, not a fresh FATAL. Anchored
+    /// level-field rules and pure-highlight rules (stack frames…) still apply.
+    /// </summary>
+    public HighlightRule? Match(string line, bool isContinuation)
     {
         for (int i = 0; i < _rules.Count; i++)
+        {
+            if (isContinuation && _loose[i]) continue;
             if (_rules[i].Matches(line)) return _rules[i];
+        }
         return null;
     }
 

@@ -186,14 +186,22 @@ public sealed class LogTab : LogPaneVm
 
         foreach (var text in texts)
         {
-            var rule = Rules.Match(text);
-
             // A line with no timestamp of its own (a stack frame, an exception header)
             // inherits the previous one, which is what keeps an exception block
             // together instead of scattering it across the merged timeline.
-            var ts = _clock.Read(text) ?? _clock.Last;
+            var own = _clock.Read(text);
+            var ts = own ?? _clock.Last;
 
-            built.Add(new LogLine(_nextNumber++, text, rule, ts, Source.Name, SourceIndex, SourceColor));
+            // The same signal drives severity: in a file whose lines carry
+            // timestamps, a timestampless line is a continuation of the event above
+            // it — loose severity keywords inside it ("STDOUT: ****Fatal error…"
+            // under an |ERROR| entry) must not mint a fresh severity. Files where
+            // no timestamp format was found keep full keyword matching everywhere.
+            bool continuation = own is null && _clock.Format is not null;
+            var rule = Rules.Match(text, continuation);
+
+            built.Add(new LogLine(_nextNumber++, text, rule, ts, Source.Name, SourceIndex, SourceColor,
+                isContinuation: continuation));
         }
 
         AppendLines(built, out int newAlerts);

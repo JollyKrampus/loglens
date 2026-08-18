@@ -149,7 +149,8 @@ public sealed class MergedTab : LogPaneVm
     /// </summary>
     private LogLine Stamp(LogTab tab, LogLine line)
         => new(_nextNumber++, line.Text, line.Rule, line.Timestamp,
-               tab.Header, tab.SourceIndex, tab.SourceColor, line.SourceLineNumber);
+               tab.Header, tab.SourceIndex, tab.SourceColor, line.SourceLineNumber,
+               line.IsContinuation);
 
     // ---- release ----------------------------------------------------------------
 
