@@ -248,6 +248,8 @@ public sealed class IssueStore : IDisposable
                     -- Latest classification wins: when a rule fix reclassifies a
                     -- signature (the 1.5.0 defaults called |Error| lines Fatal), the
                     -- stored row must follow, or it shows the wrong severity forever.
+                    -- Accepted trade-off: a message genuinely logged at two levels
+                    -- (same signature at WARN and ERROR) follows whichever came last.
                     severity      = excluded.severity,
                     -- Keep the richest sample: one that carries a stack trace beats one that doesn't.
                     sample_line   = CASE WHEN issues.sample_detail IS NULL AND excluded.sample_detail IS NOT NULL

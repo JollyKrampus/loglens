@@ -252,12 +252,14 @@ public sealed class AppSettings : ObservableObject
 public sealed class Workspace
 {
     /// <summary>
-    /// Bumped to 2 in 1.5.1, when the default rules became two-tier. The one-time
-    /// rule upgrade in WorkspaceStore.Load only runs for files below 2; without that
-    /// gate, a 1.5.1 user deleting the six "(level field)" rules would leave a list
-    /// content-identical to the old defaults and see them resurrected on every load.
+    /// Bumped whenever the default rules change shape: 2 in 1.5.1 (two-tier
+    /// defaults), 3 in 1.5.2 (exception-continuation rules above the keyword tier).
+    /// The one-time rule upgrade in WorkspaceStore.Load only runs for files below
+    /// the current number; without that gate, a user deleting some of the newer
+    /// default rules would leave a list content-identical to an older default set
+    /// and see the deleted rules resurrected on every load.
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     // The property default stays 1 deliberately: a pre-1.5.1 file that omits the
     // field must deserialise as version 1 so the upgrade applies to it.

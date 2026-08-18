@@ -3,7 +3,8 @@ LogLens for macOS
 
 The LogLens file in this folder is the whole app — one self-contained
 executable. There is nothing to install: the .NET runtime and the UI toolkit
-are baked into the binary, the same way the Windows exe works.
+are baked into the binary, the same way the Windows exe works. (On first
+launch it unpacks its native pieces to a temporary folder; that is normal.)
 
 First launch has two extra steps because the app is not yet code-signed, so
 macOS quarantines anything downloaded from a browser. In Terminal, from the
