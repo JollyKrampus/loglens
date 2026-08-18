@@ -182,6 +182,12 @@ public sealed class LogTab : LogPaneVm
                     + "under Tools ▸ Highlight rules to match the level field exactly");
         }
 
+        // Let timestamp detection see the whole batch BEFORE classifying any of
+        // it: on the big initial read this settles the verdict up front, so the
+        // head of the buffer gets the same continuation semantics as the rest —
+        // classification baked under warm-up rules is never revisited.
+        foreach (var text in texts) _clock.ObserveForDetection(text);
+
         var built = new List<LogLine>(texts.Count);
 
         foreach (var text in texts)
@@ -195,9 +201,12 @@ public sealed class LogTab : LogPaneVm
             // The same signal drives severity: in a file whose lines carry
             // timestamps, a timestampless line is a continuation of the event above
             // it — loose severity keywords inside it ("STDOUT: ****Fatal error…"
-            // under an |ERROR| entry) must not mint a fresh severity. Files where
-            // no timestamp format was found keep full keyword matching everywhere.
-            bool continuation = own is null && _clock.Format is not null;
+            // under an |ERROR| entry) must not mint a fresh severity. Gated on the
+            // SETTLED verdict, never the provisional guess: a warm-up line that
+            // merely embeds a date in its message must not strip severity from a
+            // file the verdict later calls timestampless — those files keep full
+            // keyword matching everywhere.
+            bool continuation = own is null && _clock.HasSettledFormat;
             var rule = Rules.Match(text, continuation);
 
             built.Add(new LogLine(_nextNumber++, text, rule, ts, Source.Name, SourceIndex, SourceColor,

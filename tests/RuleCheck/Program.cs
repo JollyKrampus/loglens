@@ -247,6 +247,7 @@ internal static class Program
         CheckSeverityChips();
         CheckWorkspaceCompat();
         CheckLegacyRuleUpgrade();
+        CheckContinuationSemantics();
         CheckUpdater();
         CheckTailer();
         CheckSignatures();
@@ -1204,6 +1205,75 @@ internal static class Program
         finally
         {
             try { File.Delete(path); } catch { }
+        }
+    }
+
+    // ================= continuation semantics =================
+
+    private static void CheckContinuationSemantics()
+    {
+        Section("Continuation semantics");
+
+        // The verdict gates continuation matching: a keyword-only file where some
+        // warm-up lines merely EMBED a date in message text must not lose its
+        // keyword severities to a stale provisional format guess.
+        var clock = new TimestampExtractor();
+        for (int i = 0; i < 130; i++)
+        {
+            var text = i % 25 == 0
+                ? $"INFO Scheduler Next nightly run at 2026-08-19 02:00:00 (slot {i})"
+                : $"ERROR OrderService Unhandled 500 from upstream, attempt {i}";
+            clock.ObserveForDetection(text);
+        }
+        Report(clock.IsDetected && !clock.HasSettledFormat && clock.Format is null,
+            "embedded dates below the detection threshold leave the verdict timestampless",
+            $"detected={clock.IsDetected} settled={clock.HasSettledFormat} fmt={clock.FormatName}");
+
+        var nlogClock = new TimestampExtractor();
+        for (int i = 0; i < 130; i++)
+            nlogClock.ObserveForDetection($"2026-08-18 15:30:{i % 60:00}.0000|INFO|Acme.Jobs|tick {i}");
+        Report(nlogClock.HasSettledFormat,
+            "a genuinely pipe-timestamped file settles to a format",
+            $"fmt={nlogClock.FormatName}");
+
+        // The recorder absorbs timestamp-flagged spill, so free-form STDOUT and
+        // the stack frames after it stay attached to their parent issue.
+        var dbPath = Path.Combine(Path.GetTempPath(), $"loglens-absorb-{Guid.NewGuid():N}.db");
+        var recorder = new IssueRecorder(new IssueStore(dbPath),
+            new AppSettings { TrackIssues = true });
+        try
+        {
+            var error = new HighlightRule { Name = "Error", Pattern = "unused", Severity = Severity.Error };
+            var lines = new List<LogLine>
+            {
+                new(1, "2026-08-18 15:30:31.9153|ERROR|Acme.Gateway|Acme.Models.ExitCodeException: exit code (12) did not indicate success",
+                    error, DateTime.Now),
+                new(2, "STDOUT: ******Fatal error received trying to read the package file: ExstreamPackage.pub. *******",
+                    null, DateTime.Now, isContinuation: true),
+                new(3, "   at Acme.Gateway.ProcessTimer.Watch(IProcess p)",
+                    null, DateTime.Now, isContinuation: true),
+            };
+            recorder.Observe("Prod", "app.log", lines);
+            recorder.Flush();
+
+            var rows = recorder.Store.Query(view: "Prod");
+            var issue = rows.FirstOrDefault();
+            Report(rows.Count == 1 && issue?.Severity == Severity.Error
+                   && issue.SampleDetail?.Contains("STDOUT") == true
+                   && issue.SampleDetail?.Contains("ProcessTimer.Watch") == true,
+                "free-form spill and its stack frames absorb into the parent Error issue",
+                $"rows={rows.Count} sev={issue?.Severity} detail={(issue?.SampleDetail is null ? "null" : "present")}");
+        }
+        finally
+        {
+            recorder.Dispose();
+            try
+            {
+                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(dbPath) + "*"))
+                    File.Delete(f);
+            }
+            catch { }
         }
     }
 

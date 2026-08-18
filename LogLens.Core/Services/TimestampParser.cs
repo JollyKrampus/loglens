@@ -155,8 +155,42 @@ public sealed class TimestampExtractor
 
     private readonly List<string> _sample = new(300);
 
-    public TimestampFormat? Format => _format ?? _provisional;
+    /// <summary>
+    /// The current best guess: the detected format once detection settles, the
+    /// provisional one before that. After detection concludes "no timestamps
+    /// here", this is null — the provisional guess is dead, and treating it as
+    /// alive once turned whole keyword-only files severity-less.
+    /// </summary>
+    public TimestampFormat? Format => _format ?? (_detected ? null : _provisional);
+
     public bool IsDetected => _detected;
+
+    /// <summary>
+    /// True only when detection has run to a verdict AND found a format. This is
+    /// the gate for continuation semantics: a provisional guess (set by ANY
+    /// warm-up line that merely embeds a date in its message text) must never
+    /// strip severity from a file the verdict later calls timestampless.
+    /// </summary>
+    public bool HasSettledFormat => _detected && _format is not null;
+
+    /// <summary>
+    /// Feeds a line into detection WITHOUT reading a timestamp. The tab calls
+    /// this for a whole batch before classifying it, so that on a large initial
+    /// read detection settles before the first line is classified — otherwise
+    /// the head of the buffer is classified under warm-up rules and never
+    /// corrected. Cheap and idempotent once detection has settled.
+    /// </summary>
+    public void ObserveForDetection(string line)
+    {
+        if (_detected) return;
+        _sample.Add(line);
+        if (_sample.Count >= 120)
+        {
+            _format = TimestampParser.Detect(_sample);
+            _detected = true;
+            _sample.Clear();
+        }
+    }
 
     /// <summary>
     /// Once detection has run its verdict is final, including a verdict of "nothing
