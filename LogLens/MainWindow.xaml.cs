@@ -154,8 +154,14 @@ public partial class MainWindow : Window
             // Let the tailers claim startup I/O first.
             await Task.Delay(TimeSpan.FromSeconds(5));
             var update = await UpdateService.CheckAsync();
-            if (update is not null)
-                Notify($"LogLens {update.Latest} is available — Help ▸ Check for updates");
+            if (update is null) return;
+
+            // A status-bar note was too easy to miss. Finding an update opens the
+            // same dialog a manual Help ▸ Check for updates would — with its Later
+            // button, so it is one click to dismiss. FAILURES stay quiet: being
+            // offline at startup is not something to alert about.
+            var dlg = new UpdateWindow(update) { Owner = this };
+            dlg.ShowDialog();
         }
         catch
         {
@@ -169,20 +175,25 @@ public partial class MainWindow : Window
         {
             Notify("Checking…");
             var update = await UpdateService.CheckAsync();
+            Notify("");
 
             if (update is null)
             {
-                Notify($"You're on the latest version ({UpdateService.CurrentVersion})");
+                // The user explicitly asked; answer with a dialog they cannot miss.
+                MessageBox.Show(
+                    $"You're on the latest version ({UpdateService.CurrentVersion}).",
+                    "LogLens", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
-            Notify("");
             var dlg = new UpdateWindow(update) { Owner = this };
             dlg.ShowDialog();
         }
         catch (Exception ex)
         {
-            Notify("Update check failed: " + ex.Message);
+            MessageBox.Show(
+                $"Update check failed:\n\n{ex.Message}",
+                "LogLens", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
