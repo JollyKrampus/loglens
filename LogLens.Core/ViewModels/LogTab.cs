@@ -178,8 +178,8 @@ public sealed class LogTab : LogPaneVm
             _formatHintChecked = true;
             if (Rules.HasLooseSeverityRules && RuleSet.LooksPipeLevelled(texts))
                 FormatHintDetected?.Invoke(
-                    $"{Header} looks pipe-delimited — Tools ▸ Highlight rules ▸ Load preset ▸ "
-                    + "NLog / log4net matches the level field exactly");
+                    $"{Header} looks pipe-delimited — load the \"NLog / log4net\" preset "
+                    + "under Tools ▸ Highlight rules to match the level field exactly");
         }
 
         var built = new List<LogLine>(texts.Count);

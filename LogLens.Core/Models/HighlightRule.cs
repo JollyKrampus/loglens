@@ -143,7 +143,10 @@ public sealed class HighlightRule : ObservableObject
         // it as continuation detail), not as a fresh FATAL.
         new() { Name = "Exception type",  Pattern = @"^\s*\w+(\.\w+)*Exception[:,]",  Severity = Severity.None, Foreground = "#FF9E9E", Bold = true },
         new() { Name = "Stack frame",     Pattern = @"^\s+at\s",                      Severity = Severity.None, Foreground = "#C58A8A" },
-        new() { Name = "Inner exception", Pattern = @"--->|End of inner exception",   Severity = Severity.None, Foreground = "#C58A8A" },
+        // Anchored to the START of a continuation line, unlike the preset version:
+        // here this rule sits above the keyword tier, and a bare ---> substring
+        // would swallow real "ERROR ... ---> IOException" event lines into None.
+        new() { Name = "Inner exception", Pattern = @"^\s*(--->|--- End of inner exception)", Severity = Severity.None, Foreground = "#C58A8A" },
         new() { Name = "Fatal",   Pattern = @"\b(FATAL|CRITICAL|PANIC)\b",        Severity = Severity.Fatal, Foreground = "#FFFFFF", Background = "#8B1A1A", Bold = true },
         new() { Name = "Error",   Pattern = @"\b(ERROR|ERR|SEVERE|EXCEPTION)\b",  Severity = Severity.Error, Foreground = "#FF8A8A", Background = "#3A1414" },
         new() { Name = "Warning", Pattern = @"\b(WARN|WARNING)\b",                Severity = Severity.Warn,  Foreground = "#FFC978", Background = "#332616" },

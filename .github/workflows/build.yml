@@ -80,8 +80,13 @@ jobs:
       - name: Publish for Apple Silicon and Intel
         run: |
           for rid in osx-arm64 osx-x64; do
+            # IncludeNativeLibrariesForSelfExtract matters: without it the publish
+            # drops four dylibs (Skia, HarfBuzz, AvaloniaNative, sqlite) BESIDE the
+            # binary and "one self-contained file" would be a lie. Same mechanism
+            # the Windows exe uses; they unpack to a temp dir on first launch.
             dotnet publish LogLens.Avalonia/LogLens.Avalonia.csproj -c Release -r $rid \
-              --self-contained -p:PublishSingleFile=true -p:DebugType=none -o "out/$rid"
+              --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+              -p:DebugType=none -o "out/$rid"
             # The binary is the whole app; "LogLens.Avalonia" made people think they
             # had to install Avalonia. Renaming the apphost is safe — the bundle it
             # loads is inside its own file.

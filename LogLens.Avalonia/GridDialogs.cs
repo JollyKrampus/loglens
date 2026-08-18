@@ -66,12 +66,34 @@ public sealed class RulesWindow : Window
         var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 80 };
         cancel.Click += (_, __) => Close();
 
+        // Preset loading, same registry the WPF app uses — replaces the whole list.
+        var presets = new ComboBox
+        {
+            PlaceholderText = "Load preset…",
+            MinWidth = 220,
+            ItemsSource = RulePresets.All.Select(p => p.Name).ToList(),
+        };
+        presets.SelectionChanged += (_, __) =>
+        {
+            if (presets.SelectedItem is not string name) return;
+            var preset = RulePresets.All.FirstOrDefault(p => p.Name == name);
+            if (preset is null) return;
+
+            _rules.Clear();
+            _rules.AddRange(preset.Build());
+
+            var items = (System.Collections.ObjectModel.ObservableCollection<HighlightRule>)_grid.ItemsSource!;
+            items.Clear();
+            foreach (var r in _rules) items.Add(r);
+        };
+
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
         tools.Children.Add(add);
         tools.Children.Add(remove);
+        tools.Children.Add(presets);
         tools.Children.Add(new TextBlock
         {
-            Text = "First match wins — keep FATAL above ERROR. Severity mapping follows the WPF app's rules.",
+            Text = "First match wins — keep FATAL above ERROR.",
             Foreground = Ui.Dim,
             VerticalAlignment = VerticalAlignment.Center
         });

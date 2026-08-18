@@ -81,14 +81,14 @@ public static class WorkspaceStore
             ws.Settings ??= new AppSettings();
             ws.Rules ??= HighlightRule.Defaults();
 
-            // Workspaces saved before 1.5.1 carry the old keyword-only defaults, which
-            // let a message mentioning "Fatal" outrank the line's real |Error| level
-            // field. If the rules are still EXACTLY those defaults — untouched in every
-            // field — swap in the current two-tier defaults. Any edit, reorder, recolour
-            // or disable means the user owns the list and it is left alone. The version
-            // gate makes this one-time: without it, a 1.5.1 user deleting the six
-            // "(level field)" rules would leave a list content-identical to the old
-            // defaults and get them resurrected on every load.
+            // Older releases shipped weaker default rules (keyword-only before 1.5.1,
+            // no exception-continuation tier in 1.5.1). If the workspace's rules are
+            // still EXACTLY one of those older default sets — untouched in every
+            // field — swap in the current defaults. Any edit, reorder, recolour or
+            // disable means the user owns the list and it is left alone. The version
+            // gate makes the upgrade one-time: without it, deleting some of the newer
+            // default rules could leave a list content-identical to an older default
+            // set and get the deleted rules resurrected on every load.
             if (ws.Version < Workspace.CurrentVersion && IsUntouchedLegacyDefaults(ws.Rules))
                 ws.Rules = HighlightRule.Defaults();
             ws.Version = Workspace.CurrentVersion;
@@ -109,38 +109,64 @@ public static class WorkspaceStore
     }
 
     /// <summary>
-    /// The default rule set exactly as every release from 1.0 to 1.5.0 created it.
+    /// Every default rule set an older release created, exactly as it created it.
     /// Order-sensitive and compared on every field (colours normalised for a possible
-    /// alpha channel), so only a genuinely untouched set matches.
+    /// alpha channel), so only a genuinely untouched set matches. When the defaults
+    /// change shape again: bump Workspace.CurrentVersion and append the outgoing
+    /// shape here.
     /// </summary>
-    private static readonly (string Name, string Pattern, Severity Severity, string Fg, string Bg, bool Bold)[]
-        LegacyDefaults =
+    private static readonly (string Name, string Pattern, Severity Severity, string Fg, string Bg, bool Bold)[][]
+        LegacyDefaultSets =
         [
-            ("Fatal",   @"\b(FATAL|CRITICAL|PANIC)\b",       Severity.Fatal, "#FFFFFF", "#8B1A1A", true),
-            ("Error",   @"\b(ERROR|ERR|SEVERE|EXCEPTION)\b", Severity.Error, "#FF8A8A", "#3A1414", false),
-            ("Warning", @"\b(WARN|WARNING)\b",               Severity.Warn,  "#FFC978", "#332616", false),
-            ("Info",    @"\b(INFO|INFORMATION)\b",           Severity.Info,  "#8FD3FF", "",        false),
-            ("Debug",   @"\b(DEBUG|DBG)\b",                  Severity.Debug, "#9E9E9E", "",        false),
-            ("Trace",   @"\b(TRACE|VERBOSE)\b",              Severity.Trace, "#6E6E6E", "",        false),
-            ("Stack frame", @"^\s+at\s",                     Severity.None,  "#C58A8A", "",        false),
+            // 1.0 – 1.5.0: keyword-only.
+            [
+                ("Fatal",   @"\b(FATAL|CRITICAL|PANIC)\b",       Severity.Fatal, "#FFFFFF", "#8B1A1A", true),
+                ("Error",   @"\b(ERROR|ERR|SEVERE|EXCEPTION)\b", Severity.Error, "#FF8A8A", "#3A1414", false),
+                ("Warning", @"\b(WARN|WARNING)\b",               Severity.Warn,  "#FFC978", "#332616", false),
+                ("Info",    @"\b(INFO|INFORMATION)\b",           Severity.Info,  "#8FD3FF", "",        false),
+                ("Debug",   @"\b(DEBUG|DBG)\b",                  Severity.Debug, "#9E9E9E", "",        false),
+                ("Trace",   @"\b(TRACE|VERBOSE)\b",              Severity.Trace, "#6E6E6E", "",        false),
+                ("Stack frame", @"^\s+at\s",                     Severity.None,  "#C58A8A", "",        false),
+            ],
+            // 1.5.1: two tiers, narrower field vocabulary, no continuation rules.
+            [
+                ("Fatal (level field)",   @"(^|\|)\s*(FATAL|CRITICAL)\s*\|", Severity.Fatal, "#FFFFFF", "#8B1A1A", true),
+                ("Error (level field)",   @"(^|\|)\s*(ERROR|SEVERE)\s*\|",   Severity.Error, "#FF8A8A", "#3A1414", false),
+                ("Warning (level field)", @"(^|\|)\s*(WARN|WARNING)\s*\|",   Severity.Warn,  "#FFC978", "#332616", false),
+                ("Info (level field)",    @"(^|\|)\s*(INFO)\s*\|",           Severity.Info,  "#8FD3FF", "",        false),
+                ("Debug (level field)",   @"(^|\|)\s*(DEBUG|DBG)\s*\|",      Severity.Debug, "#9E9E9E", "",        false),
+                ("Trace (level field)",   @"(^|\|)\s*(TRACE|VERBOSE)\s*\|",  Severity.Trace, "#6E6E6E", "",        false),
+                ("Fatal",   @"\b(FATAL|CRITICAL|PANIC)\b",       Severity.Fatal, "#FFFFFF", "#8B1A1A", true),
+                ("Error",   @"\b(ERROR|ERR|SEVERE|EXCEPTION)\b", Severity.Error, "#FF8A8A", "#3A1414", false),
+                ("Warning", @"\b(WARN|WARNING)\b",               Severity.Warn,  "#FFC978", "#332616", false),
+                ("Info",    @"\b(INFO|INFORMATION)\b",           Severity.Info,  "#8FD3FF", "",        false),
+                ("Debug",   @"\b(DEBUG|DBG)\b",                  Severity.Debug, "#9E9E9E", "",        false),
+                ("Trace",   @"\b(TRACE|VERBOSE)\b",              Severity.Trace, "#6E6E6E", "",        false),
+                ("Stack frame", @"^\s+at\s",                     Severity.None,  "#C58A8A", "",        false),
+            ],
         ];
 
     private static bool IsUntouchedLegacyDefaults(List<HighlightRule> rules)
     {
-        if (rules.Count != LegacyDefaults.Length) return false;
-
-        for (int i = 0; i < rules.Count; i++)
+        foreach (var set in LegacyDefaultSets)
         {
-            var (name, pattern, severity, fg, bg, bold) = LegacyDefaults[i];
-            var r = rules[i];
+            if (rules.Count != set.Length) continue;
 
-            if (r.Name != name || r.Pattern != pattern || r.Severity != severity
-                || !r.IsRegex || r.CaseSensitive || !r.Enabled || r.Bold != bold
-                || !HexEquals(r.Foreground, fg) || !HexEquals(r.Background, bg))
-                return false;
+            bool all = true;
+            for (int i = 0; i < rules.Count && all; i++)
+            {
+                var (name, pattern, severity, fg, bg, bold) = set[i];
+                var r = rules[i];
+
+                all = r.Name == name && r.Pattern == pattern && r.Severity == severity
+                      && r.IsRegex && !r.CaseSensitive && r.Enabled && r.Bold == bold
+                      && HexEquals(r.Foreground, fg) && HexEquals(r.Background, bg);
+            }
+
+            if (all) return true;
         }
 
-        return true;
+        return false;
     }
 
     /// <summary>#FFCC0000 (as an older serialiser may have written it) equals #CC0000.</summary>

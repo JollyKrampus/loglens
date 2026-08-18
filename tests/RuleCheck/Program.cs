@@ -119,6 +119,18 @@ internal static class Program
         Expect(generic, "Fatal error occurred",
             Severity.Fatal, "a bare keyword line with no pipes still hits the keyword tier");
 
+        // .NET flattens inner exceptions into the event line with " ---> ". That
+        // must NOT demote a leveled line to None — only a line that STARTS as a
+        // continuation counts as one.
+        Expect(generic, "2026-08-14 12:32:38.480 ERROR OrderService Sync failed: System.AggregateException: One or more errors occurred. ---> System.IO.IOException: disk full",
+            Severity.Error, "an ERROR line with an inline ---> chain keeps its severity");
+
+        Expect(generic, "2026-08-14 12:32:38.481 INFO StateMachine transition Idle ---> Running",
+            Severity.Info, "an INFO line whose message contains ---> stays Info");
+
+        ExpectRule(generic, " ---> System.TimeoutException: A task was canceled.",
+            "Inner exception", Severity.None, "a real inner-exception continuation line stays None");
+
         // ---- pipe-format detection (drives the status-bar preset hint) ---------
 
         Section("Pipe-format detection");
@@ -1026,6 +1038,24 @@ internal static class Program
         new() { Name = "Stack frame", Pattern = @"^\s+at\s",                      Severity = Severity.None,  Foreground = "#C58A8A" },
     ];
 
+    /// <summary>The default rules exactly as 1.5.1 wrote them: two tiers, narrower
+    /// field vocabulary, no continuation rules above the keyword tier.</summary>
+    private static List<HighlightRule> V151DefaultRules()
+    {
+        static string Field(string levels) => $@"(^|\|)\s*({levels})\s*\|";
+        var rules = new List<HighlightRule>
+        {
+            new() { Name = "Fatal (level field)",   Pattern = Field("FATAL|CRITICAL"), Severity = Severity.Fatal, Foreground = "#FFFFFF", Background = "#8B1A1A", Bold = true },
+            new() { Name = "Error (level field)",   Pattern = Field("ERROR|SEVERE"),   Severity = Severity.Error, Foreground = "#FF8A8A", Background = "#3A1414" },
+            new() { Name = "Warning (level field)", Pattern = Field("WARN|WARNING"),   Severity = Severity.Warn,  Foreground = "#FFC978", Background = "#332616" },
+            new() { Name = "Info (level field)",    Pattern = Field("INFO"),           Severity = Severity.Info,  Foreground = "#8FD3FF" },
+            new() { Name = "Debug (level field)",   Pattern = Field("DEBUG|DBG"),      Severity = Severity.Debug, Foreground = "#9E9E9E" },
+            new() { Name = "Trace (level field)",   Pattern = Field("TRACE|VERBOSE"),  Severity = Severity.Trace, Foreground = "#6E6E6E" },
+        };
+        rules.AddRange(Pre151DefaultRules());
+        return rules;
+    }
+
     private static void CheckLegacyRuleUpgrade()
     {
         Section("Legacy default-rule upgrade");
@@ -1079,6 +1109,33 @@ internal static class Program
             Report(keptMuted.Rules.Count == 7 && !keptMuted.Rules[4].Enabled,
                 "a rule set with a disabled rule is left alone too",
                 $"count={keptMuted.Rules.Count}");
+
+            // A workspace last saved by 1.5.1 (Version=2, untouched 13-rule set)
+            // must ALSO be upgraded — its rules lack the continuation tier, so
+            // stack-trace headers saying "fatal" still mint bogus Fatals there.
+            var v151 = Workspace.CreateDefault();
+            v151.Version = 2;
+            v151.Rules = V151DefaultRules();
+            WorkspaceStore.Save(v151, path);
+
+            var upgraded151 = WorkspaceStore.Load(path);
+            Report(upgraded151.Rules.Count == fresh.Count
+                   && upgraded151.Rules.Any(r => r.Name == "Inner exception")
+                   && upgraded151.Version == Workspace.CurrentVersion,
+                "untouched 1.5.1 defaults are upgraded too",
+                $"count={upgraded151.Rules.Count} version={upgraded151.Version}");
+
+            // But a CUSTOMISED 1.5.1 set stays the user's own.
+            var v151Custom = Workspace.CreateDefault();
+            v151Custom.Version = 2;
+            v151Custom.Rules = V151DefaultRules();
+            v151Custom.Rules[0].Background = "#600000";
+            WorkspaceStore.Save(v151Custom, path);
+
+            var kept151 = WorkspaceStore.Load(path);
+            Report(kept151.Rules.Count == 13 && kept151.Rules[0].Background == "#600000",
+                "a customised 1.5.1 rule set is left alone",
+                $"count={kept151.Rules.Count} bg={kept151.Rules[0].Background}");
 
             // The trap the version gate exists for: a 1.5.1 user deletes the six
             // "(level field)" rules, leaving a list content-identical to the legacy
