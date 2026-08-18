@@ -121,6 +121,8 @@ internal static class Program
         CheckAlerts();
         CheckSounds();
         CheckSeverityChips();
+        CheckWorkspaceCompat();
+        CheckUpdater();
         CheckTailer();
         CheckSignatures();
         CheckIssueStore();
@@ -682,6 +684,218 @@ internal static class Program
                     File.Delete(f);
             }
             catch { /* temp files */ }
+        }
+    }
+
+    // ================= workspace compatibility =================
+
+    /// <summary>
+    /// Teams share workspace files across app versions, so the on-disk format is a
+    /// contract. This loads a workspace exactly as v1.1.0 wrote one and asserts
+    /// nothing is lost — if a schema change ever breaks older files, this fails CI
+    /// before it reaches anyone. The unknown extra property pins the reverse
+    /// direction: files written by a NEWER LogLens must still load in this one.
+    /// </summary>
+    private static void CheckWorkspaceCompat()
+    {
+        Section("Workspace compatibility");
+
+        const string v11Workspace = """
+        {
+          "Version": 1,
+          "Settings": {
+            "PollIntervalMs": 300,
+            "MaxLines": 150000,
+            "InitialTailKb": 1024,
+            "FontFamily": "Consolas",
+            "FontSize": 13.0,
+            "ShowLineNumbers": true,
+            "WordWrap": false,
+            "LightTheme": false,
+            "MergeWindowMs": 1500,
+            "TrackIssues": true,
+            "JiraBaseUrl": "https://example.atlassian.net",
+            "JiraProjectKey": "PLAT"
+          },
+          "Alerts": {
+            "Enabled": true,
+            "MinimumSeverity": "Error",
+            "CustomPattern": "ORDER-9",
+            "ShowToast": true,
+            "PlaySound": true,
+            "SoundName": "Windows Notify.wav",
+            "FatalSoundName": "Windows Critical Stop.wav",
+            "UseDistinctFatalSound": true,
+            "FlashTaskbar": true,
+            "OnlyWhenUnfocused": true,
+            "ThrottleSeconds": 20
+          },
+          "Rules": [
+            { "Name": "Error", "Pattern": "\\b(ERROR)\\b", "IsRegex": true, "CaseSensitive": false,
+              "Enabled": true, "Bold": false, "Foreground": "#FF8A8A", "Background": "#3A1414", "Severity": "Error" }
+          ],
+          "Views": [
+            {
+              "Id": "team-view", "Name": "Prod", "Accent": "#EF5350",
+              "ShowMergedTimeline": true, "AlertsEnabled": true,
+              "Sources": [ { "Id": "s1", "Name": "app", "Path": "C:\\logs\\app-*.log" } ],
+              "Rules": []
+            }
+          ],
+          "ActiveViewId": "team-view",
+          "WindowWidth": 1280, "WindowHeight": 760, "WindowMaximized": false,
+          "SomeSettingFromAFutureVersion": { "nested": true, "count": 3 }
+        }
+        """;
+
+        var path = Path.Combine(Path.GetTempPath(), $"loglens-compat-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, v11Workspace);
+            var ws = WorkspaceStore.Load(path);
+
+            Report(ws.Settings.PollIntervalMs == 300 && ws.Settings.MaxLines == 150_000
+                   && ws.Settings.JiraProjectKey == "PLAT" && ws.Settings.MergeWindowMs == 1500,
+                "a v1.1 workspace's settings survive loading",
+                $"poll={ws.Settings.PollIntervalMs} max={ws.Settings.MaxLines} jira={ws.Settings.JiraProjectKey}");
+
+            Report(ws.Alerts.CustomPattern == "ORDER-9" && ws.Alerts.SoundName == "Windows Notify.wav"
+                   && ws.Alerts.ThrottleSeconds == 20,
+                "alert settings survive, sound choice included",
+                $"pattern={ws.Alerts.CustomPattern} sound={ws.Alerts.SoundName}");
+
+            Report(ws.Views.Count == 1 && ws.Views[0].Name == "Prod"
+                   && ws.Views[0].ShowMergedTimeline && ws.Views[0].Sources.Count == 1
+                   && ws.Views[0].Sources[0].Path == @"C:\logs\app-*.log"
+                   && ws.ActiveViewId == "team-view",
+                "views, sources and the active view survive",
+                $"views={ws.Views.Count} active={ws.ActiveViewId}");
+
+            Report(ws.Rules.Count == 1 && ws.Rules[0].Severity == Severity.Error,
+                "highlight rules survive", $"rules={ws.Rules.Count}");
+
+            Report(true, "an unknown property from a future version is ignored, not fatal",
+                "load would have thrown before reaching here");
+
+            // Round-trip: what this version saves must itself reload.
+            WorkspaceStore.Save(ws, path);
+            var again = WorkspaceStore.Load(path);
+            Report(again.Views.Count == 1 && again.Settings.PollIntervalMs == 300,
+                "saving and reloading with the current version loses nothing",
+                $"views={again.Views.Count} poll={again.Settings.PollIntervalMs}");
+        }
+        finally
+        {
+            try { File.Delete(path); } catch { }
+        }
+    }
+
+    // ================= updater =================
+
+    private static void CheckUpdater()
+    {
+        Section("Self-update");
+
+        Report(UpdateService.ParseVersion("v1.2.0") == new Version(1, 2, 0)
+               && UpdateService.ParseVersion("1.10.3") == new Version(1, 10, 3)
+               && UpdateService.ParseVersion("1.3.0+abc123") == new Version(1, 3, 0)
+               && UpdateService.ParseVersion("v2.0.0-rc.1") == new Version(2, 0, 0),
+            "release tags parse: v-prefix, build metadata and prerelease suffixes",
+            $"got {UpdateService.ParseVersion("v1.2.0")}, {UpdateService.ParseVersion("1.3.0+abc123")}");
+
+        Report(UpdateService.ParseVersion("main") is null && UpdateService.ParseVersion("") is null,
+            "junk tags parse to null instead of throwing", "");
+
+        Report(UpdateService.ParseVersion("v1.10.0") > UpdateService.ParseVersion("v1.9.9"),
+            "versions compare numerically, not as strings (1.10 > 1.9)", "");
+
+        var sums = "ed48649235605\n"
+                 + "ab12cd34ef5601234567890123456789012345678901234567890123456789ab  LogLens.exe\n"
+                 + "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  Other.dll\n";
+        Report(UpdateService.ParseChecksum(sums, "LogLens.exe")
+                   == "ab12cd34ef5601234567890123456789012345678901234567890123456789ab",
+            "the right line is pulled out of SHA256SUMS.txt",
+            $"got {UpdateService.ParseChecksum(sums, "LogLens.exe")}");
+
+        Report(UpdateService.ParseChecksum(sums, "missing.exe") is null
+               && UpdateService.ParseChecksum(null, "LogLens.exe") is null,
+            "a missing entry or empty file yields null, not a bogus hash", "");
+
+        // The rename dance on real files: exe -> .old, staged -> exe.
+        var dir = Path.Combine(Path.GetTempPath(), $"loglens-swap-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var exe = Path.Combine(dir, "LogLens.exe");
+            var staged = exe + UpdateService.StagedSuffix;
+            File.WriteAllText(exe, "OLD BINARY");
+            File.WriteAllText(staged, "NEW BINARY");
+
+            UpdateService.PerformSwap(exe, staged);
+
+            Report(File.ReadAllText(exe) == "NEW BINARY"
+                   && File.ReadAllText(exe + UpdateService.BackupSuffix) == "OLD BINARY"
+                   && !File.Exists(staged),
+                "the swap installs the new exe and keeps the old one as .old",
+                $"exe='{File.ReadAllText(exe)}'");
+
+            // A second update must not trip over the previous .old.
+            File.WriteAllText(staged, "NEWER BINARY");
+            UpdateService.PerformSwap(exe, staged);
+            Report(File.ReadAllText(exe) == "NEWER BINARY",
+                "a second update replaces the leftover .old without failing",
+                $"exe='{File.ReadAllText(exe)}'");
+
+            // If installing the new exe fails, the old one must come back.
+            var lockedTarget = Path.Combine(dir, "Locked.exe");
+            File.WriteAllText(lockedTarget, "ORIGINAL");
+            bool rolledBack;
+            try
+            {
+                UpdateService.PerformSwap(lockedTarget, Path.Combine(dir, "does-not-exist.update"));
+                rolledBack = false;
+            }
+            catch
+            {
+                rolledBack = File.Exists(lockedTarget) && File.ReadAllText(lockedTarget) == "ORIGINAL";
+            }
+            Report(rolledBack, "a failed swap restores the original exe instead of leaving none",
+                $"exists={File.Exists(lockedTarget)}");
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { }
+        }
+
+        // Live check against the real GitHub API — opt-in because CI networking and
+        // rate limits make it flaky there. Run locally: RULECHECK_LIVE=1
+        if (Environment.GetEnvironmentVariable("RULECHECK_LIVE") == "1")
+        {
+            try
+            {
+                var update = UpdateService.CheckAsync(currentOverride: new Version(0, 0, 1))
+                    .GetAwaiter().GetResult();
+
+                Report(update is not null
+                       && update.Latest >= new Version(1, 2, 0)
+                       && update.ExeDownloadUrl.Contains("LogLens.exe")
+                       && update.ChecksumDownloadUrl is not null,
+                    "LIVE: the GitHub check finds the real latest release with exe and checksum",
+                    update is null ? "returned null" : $"latest={update.Latest} url={update.ExeDownloadUrl}");
+
+                var current = UpdateService.CheckAsync(currentOverride: new Version(99, 0, 0))
+                    .GetAwaiter().GetResult();
+                Report(current is null, "LIVE: being ahead of the latest release reports up-to-date",
+                    current is null ? "" : $"unexpectedly offered {current.Latest}");
+            }
+            catch (Exception ex)
+            {
+                Skip("LIVE update check", "network problem: " + ex.Message);
+            }
+        }
+        else
+        {
+            Skip("LIVE update check against api.github.com", "set RULECHECK_LIVE=1 to run it");
         }
     }
 

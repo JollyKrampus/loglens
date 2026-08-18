@@ -201,6 +201,14 @@ public sealed class AppSettings : ObservableObject
 
     /// <summary>Default project key put on generated tickets, e.g. PLAT.</summary>
     public string JiraProjectKey { get => _jiraProjectKey; set => Set(ref _jiraProjectKey, value); }
+
+    private bool _checkForUpdates = true;
+
+    /// <summary>
+    /// One quiet GitHub releases lookup shortly after startup. Finding something
+    /// only produces a status-bar note — never a download without you asking.
+    /// </summary>
+    public bool CheckForUpdates { get => _checkForUpdates; set => Set(ref _checkForUpdates, value); }
 }
 
 /// <summary>Everything persisted to loglens.workspace.json.</summary>

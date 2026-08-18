@@ -45,6 +45,14 @@ public sealed class LogTab : LogPaneVm
     public override string? ResolvedFilePath => PathResolver.Resolve(Source.Path);
     public override bool SupportsOpenInEditor => true;
 
+    private bool _isPrimed;
+
+    /// <summary>
+    /// True once the first batch (even an empty one) has arrived — i.e. the initial
+    /// tail read finished. Drives the startup "Opening logs… n/m" progress.
+    /// </summary>
+    public bool IsPrimed { get => _isPrimed; private set => Set(ref _isPrimed, value); }
+
     /// <summary>Which timestamp layout was detected, shown in the merged view's status.</summary>
     public string TimestampFormatName => _clock.FormatName;
 
@@ -65,11 +73,13 @@ public sealed class LogTab : LogPaneVm
         _clock.Reset();
         ResetBuffer();
         _nextNumber = 1;
+        IsPrimed = false;
         RaiseStats();
 
         if (string.IsNullOrWhiteSpace(Source.Path))
         {
             Status = "No file selected";
+            IsPrimed = true;   // nothing to load counts as loaded
             return;
         }
 
@@ -87,6 +97,9 @@ public sealed class LogTab : LogPaneVm
         {
             Status = m;
             Raise(nameof(HasError));
+            // A missing or unreadable file never produces a batch; for the startup
+            // progress it still counts as "finished loading".
+            if (m is not null) IsPrimed = true;
         });
         _tailer.Start(Settings.PollIntervalMs);
     }
@@ -113,6 +126,7 @@ public sealed class LogTab : LogPaneVm
     {
         Ui.BeginInvoke(() =>
         {
+            IsPrimed = true;
             if (batch.Rewound)
             {
                 _pending.Clear();
