@@ -79,9 +79,15 @@ jobs:
 
       - name: Publish for Apple Silicon and Intel
         run: |
-          # The tag carries the version for Info.plist; manual runs get a dev stamp.
-          VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.0.0-dev"
+          # The tag carries the version for Info.plist; manual runs get a dev
+          # stamp. REF_TYPE is the discriminator — a prefix test alone would let a
+          # dispatch from a branch named "version-bump" stamp "ersion-bump", and a
+          # slashed v-branch would break the sed below.
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev"
+          fi
 
           for rid in osx-arm64 osx-x64; do
             # IncludeNativeLibrariesForSelfExtract matters: without it the publish
@@ -98,7 +104,7 @@ jobs:
             # safe) + the icns rendered from the same artwork as app.ico.
             APP="stage/$rid/LogLens.app"
             mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-            sed "s/APP_VERSION/$VERSION/g" packaging/Info.plist > "$APP/Contents/Info.plist"
+            sed "s|APP_VERSION|$VERSION|g" packaging/Info.plist > "$APP/Contents/Info.plist"
             mv "out/$rid/LogLens.Avalonia" "$APP/Contents/MacOS/LogLens"
             chmod +x "$APP/Contents/MacOS/LogLens"
             cp packaging/LogLens.icns "$APP/Contents/Resources/LogLens.icns"

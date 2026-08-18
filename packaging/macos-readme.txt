@@ -21,8 +21,11 @@ Which download is which:
 
 Your workspace is saved to ~/.config/LogLens/loglens.workspace.json (an app
 bundle is not a portable install, so nothing is written inside LogLens.app).
-If you used a pre-1.5.3 build, copy the loglens.workspace.json that sat next
-to the old binary into that folder to keep your views.
+If you used a pre-1.5.3 build, copy BOTH files that sat next to the old
+binary into that folder to keep your views and your recorded issue history:
+
+    loglens.workspace.json
+    loglens.issues.db
 
 Early build: live tailing, views, the merged timeline, highlighting and the
 issue database all work. Alerts, sounds and self-update are Windows-only for

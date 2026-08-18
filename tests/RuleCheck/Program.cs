@@ -1236,6 +1236,30 @@ internal static class Program
             "a genuinely pipe-timestamped file settles to a format",
             $"fmt={nlogClock.FormatName}");
 
+        // The EXACT call pattern LogTab.Ingest uses: observe a batch, then read
+        // it. Each line must be sampled once — when Read also sampled, the head
+        // of the batch was counted twice and 15 embedded dates out of 130 lines
+        // were enough duplicate hits to flip the verdict to "timestamped",
+        // severity-stripping the whole keyword-only file.
+        var ingestClock = new TimestampExtractor();
+        var batch1 = new List<string>();
+        for (int i = 0; i < 100; i++)
+            batch1.Add(i < 15
+                ? $"INFO Scheduler Job {i} scheduled for 2026-08-19 02:00:00"
+                : $"ERROR OrderService Unhandled 500 from upstream, attempt {i}");
+        var batch2 = new List<string>();
+        for (int i = 0; i < 30; i++)
+            batch2.Add($"WARN CacheWarmer Retry {i} of 3");
+
+        foreach (var batch in new[] { batch1, batch2 })
+        {
+            foreach (var l in batch) ingestClock.ObserveForDetection(l);
+            foreach (var l in batch) ingestClock.Read(l);
+        }
+        Report(ingestClock.IsDetected && !ingestClock.HasSettledFormat,
+            "the ingest call pattern samples each line once — embedded dates cannot flip the verdict",
+            $"detected={ingestClock.IsDetected} settled={ingestClock.HasSettledFormat} fmt={ingestClock.FormatName}");
+
         // The recorder absorbs timestamp-flagged spill, so free-form STDOUT and
         // the stack frames after it stay attached to their parent issue.
         var dbPath = Path.Combine(Path.GetTempPath(), $"loglens-absorb-{Guid.NewGuid():N}.db");
