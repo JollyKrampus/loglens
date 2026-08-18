@@ -137,13 +137,19 @@ public sealed class HighlightRule : ObservableObject
         new() { Name = "Info (level field)",    Pattern = LevelField("INFO|INFORMATION"),      Severity = Severity.Info,  Foreground = "#8FD3FF" },
         new() { Name = "Debug (level field)",   Pattern = LevelField("DEBUG|DBG"),             Severity = Severity.Debug, Foreground = "#9E9E9E" },
         new() { Name = "Trace (level field)",   Pattern = LevelField("TRACE|VERBOSE"),         Severity = Severity.Trace, Foreground = "#6E6E6E" },
+        // Exception spill-over sits ABOVE the keyword tier: a stack frame or an
+        // exception header whose text happens to say "fatal" must read as part of
+        // its parent event (Severity.None, so counters and the issue database treat
+        // it as continuation detail), not as a fresh FATAL.
+        new() { Name = "Exception type",  Pattern = @"^\s*\w+(\.\w+)*Exception[:,]",  Severity = Severity.None, Foreground = "#FF9E9E", Bold = true },
+        new() { Name = "Stack frame",     Pattern = @"^\s+at\s",                      Severity = Severity.None, Foreground = "#C58A8A" },
+        new() { Name = "Inner exception", Pattern = @"--->|End of inner exception",   Severity = Severity.None, Foreground = "#C58A8A" },
         new() { Name = "Fatal",   Pattern = @"\b(FATAL|CRITICAL|PANIC)\b",        Severity = Severity.Fatal, Foreground = "#FFFFFF", Background = "#8B1A1A", Bold = true },
         new() { Name = "Error",   Pattern = @"\b(ERROR|ERR|SEVERE|EXCEPTION)\b",  Severity = Severity.Error, Foreground = "#FF8A8A", Background = "#3A1414" },
         new() { Name = "Warning", Pattern = @"\b(WARN|WARNING)\b",                Severity = Severity.Warn,  Foreground = "#FFC978", Background = "#332616" },
         new() { Name = "Info",    Pattern = @"\b(INFO|INFORMATION)\b",            Severity = Severity.Info,  Foreground = "#8FD3FF" },
         new() { Name = "Debug",   Pattern = @"\b(DEBUG|DBG)\b",                   Severity = Severity.Debug, Foreground = "#9E9E9E" },
         new() { Name = "Trace",   Pattern = @"\b(TRACE|VERBOSE)\b",               Severity = Severity.Trace, Foreground = "#6E6E6E" },
-        new() { Name = "Stack frame", Pattern = @"^\s+at\s",                      Severity = Severity.None,  Foreground = "#C58A8A" },
     ];
 
     /// <summary>

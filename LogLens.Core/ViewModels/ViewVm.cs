@@ -35,6 +35,9 @@ public sealed class ViewVm : ObservableObject, IDisposable
     /// <summary>Chips, filters or follow changed on some pane — the workspace is dirty.</summary>
     public event Action? StateChanged;
 
+    /// <summary>A tab noticed its file is pipe-delimited while the rules are keyword-loose.</summary>
+    public event Action<string>? FormatHint;
+
     /// <summary>The shell shows this to the user however it likes (message box, toast…).</summary>
     public Action<string>? NotifyUser;
 
@@ -198,6 +201,8 @@ public sealed class ViewVm : ObservableObject, IDisposable
     private LogTab AddTabFor(LogSource source)
     {
         var tab = new LogTab(source, _settings, _ui);
+
+        tab.FormatHintDetected += m => FormatHint?.Invoke(m);
 
         tab.PropertyChanged += (_, e) =>
         {

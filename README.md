@@ -103,17 +103,19 @@ Need a one-off binary without tagging? Actions tab → **build** → *Run workfl
 ## macOS (early)
 
 Since 1.5.0 each release also carries `LogLens-macos-osx-arm64.tar.gz` (Apple
-Silicon) and `LogLens-macos-osx-x64.tar.gz` (Intel) — the **LogLens.Avalonia** app,
-a cross-platform UI over the same core: tailing, views, merged timeline, severity
-chips, filters, highlight rules, the per-view issue database and Jira tickets. It
-runs on Windows too. Not yet ported: alerts/sounds, self-update, find-in-tab, and
-the editor/Explorer integrations — the Windows WPF app remains the full experience.
+Silicon) and `LogLens-macos-osx-x64.tar.gz` (Intel): a single self-contained
+`LogLens` binary — **nothing to install**, the .NET runtime and UI toolkit are
+baked in, exactly like the Windows exe — over the same core: tailing, views,
+merged timeline, severity chips, filters, highlight rules, the per-view issue
+database and Jira tickets. Not yet ported: alerts/sounds, self-update,
+find-in-tab, and the editor/Explorer integrations — the Windows WPF app remains
+the full experience. (Releases up to 1.5.1 named the binary `LogLens.Avalonia`
+— same app, just the project's name.)
 
-To run it on a Mac:
+To run it on a Mac, from the folder you extracted into:
 
 ```bash
-tar -xzf LogLens-macos-osx-arm64.tar.gz && cd LogLens-macos-osx-arm64 2>/dev/null || true
-xattr -cr . && chmod +x LogLens.Avalonia && ./LogLens.Avalonia
+xattr -cr . && chmod +x LogLens && ./LogLens
 ```
 
 The `xattr` line matters: the binaries are **not signed or notarised** (that needs

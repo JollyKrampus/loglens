@@ -108,6 +108,48 @@ internal static class Program
         Expect(generic, "2026-08-18 07:12:45.0001|Information|Acme.Jobs|Recovered from a transient error",
             Severity.Info, "an |Information| level field also beats message keywords");
 
+        // Multi-line spill: an exception block under an |Error| line must not have
+        // its continuation lines promoted to Fatal by the keyword fallback.
+        ExpectRule(generic, "System.AggregateException: A fatal error occurred while receiving.",
+            "Exception type", Severity.None, "exception header saying 'fatal' stays continuation, not Fatal");
+
+        ExpectRule(generic, "   at Acme.Gateway.Listener.Receive(Message m)",
+            "Stack frame", Severity.None, "stack frame stays continuation");
+
+        Expect(generic, "Fatal error occurred",
+            Severity.Fatal, "a bare keyword line with no pipes still hits the keyword tier");
+
+        // ---- pipe-format detection (drives the status-bar preset hint) ---------
+
+        Section("Pipe-format detection");
+
+        Report(RuleSet.LooksPipeLevelled(
+            [
+                "2026-08-18 07:12:44.1230|Error|Acme.Gateway|****Fatal error received",
+                "2026-08-18 07:12:44.2230|Info|Acme.Gateway|Reconnecting",
+                "2026-08-18 07:12:44.3230|Debug|Acme.Gateway|Attempt 1",
+                "   at Acme.Gateway.Listener.Receive(Message m)",
+                "2026-08-18 07:12:44.4230|Warn|Acme.Gateway|Attempt 2 slow",
+                "2026-08-18 07:12:44.5230|Info|Acme.Gateway|Connected",
+            ]),
+            "a pipe-delimited sample with a stack line is detected", "");
+
+        Report(!RuleSet.LooksPipeLevelled(
+            [
+                "2026-08-14 12:32:38.480 ERROR OrderService Unhandled 500",
+                "2026-08-14 12:32:38.482 INFO OrderService Heartbeat ok",
+                "2026-08-14 12:32:38.484 WARN OrderService Slow request",
+                "2026-08-14 12:32:38.486 INFO OrderService Heartbeat ok",
+                "2026-08-14 12:32:38.488 DEBUG OrderService Poll",
+            ]),
+            "a space-delimited sample is not detected as pipe format", "");
+
+        Report(new RuleSet([], HighlightRule.Defaults()).HasLooseSeverityRules,
+            "the default rules count as keyword-loose (hint applies)", "");
+
+        Report(!new RuleSet([], Preset("NLog / log4net (pipe-delimited)")).HasLooseSeverityRules,
+            "the NLog preset is fully anchored (no hint)", "");
+
         // ---- generic preset on space-delimited logs ----------------------------
 
         Section("Generic keyword preset");
@@ -699,6 +741,23 @@ internal static class Program
                        && store.Query(Severity.Error, view: "Prod", includeFiled: true).Count == 1,
                     "ignoring is per view too", "ignore leaked across views");
 
+                // A rule fix can reclassify a signature (1.5.0 called |Error| lines
+                // Fatal). The stored row must follow the newest observation, or the
+                // Issues window shows the wrong severity forever. Uses its own row in
+                // its own view so it cannot disturb the fixtures above.
+                var reclass = SignatureBuilder.Build("FATAL Worker Cache corrupted at offset 4096");
+                store.Record([
+                    new IssueOccurrence(reclass, Severity.Fatal, "FATAL Worker Cache corrupted at offset 4096", null, "Dev", "dev.log", now.AddSeconds(5)),
+                ]);
+                store.Record([
+                    new IssueOccurrence(reclass, Severity.Error, "FATAL Worker Cache corrupted at offset 8192", null, "Dev", "dev.log", now.AddSeconds(6)),
+                ]);
+                var reclassified = store.Query(view: "Dev")
+                    .FirstOrDefault(i => i.Hash == reclass.Hash);
+                Report(reclassified?.Severity == Severity.Error && reclassified?.Count == 2,
+                    "a re-observed issue adopts the newest severity classification",
+                    $"severity={reclassified?.Severity} count={reclassified?.Count}");
+
                 // The generated ticket must contain the facts that make it useful.
                 var fatal = store.Query(Severity.Fatal)[0];
                 var ticket = JiraTemplate.Full(fatal, "PLAT");
@@ -1027,13 +1086,14 @@ internal static class Program
             // must NOT run and the deletion must stick across loads.
             var trimmed = Workspace.CreateDefault();
             trimmed.Rules = trimmed.Rules.Where(r => !r.Name.Contains("(level field)")).ToList();
+            int trimmedCount = trimmed.Rules.Count;
             WorkspaceStore.Save(trimmed, path);
 
             var stillTrimmed = WorkspaceStore.Load(path);
-            Report(stillTrimmed.Rules.Count == 7
+            Report(stillTrimmed.Rules.Count == trimmedCount
                    && stillTrimmed.Rules.All(r => !r.Name.Contains("(level field)")),
                 "deleting the level-field rules on 1.5.1 sticks — no resurrection",
-                $"count={stillTrimmed.Rules.Count}");
+                $"count={stillTrimmed.Rules.Count} expected={trimmedCount}");
 
             // The current defaults must round-trip untouched (no repeat upgrades).
             var current = Workspace.CreateDefault();

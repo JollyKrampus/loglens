@@ -245,6 +245,10 @@ public sealed class IssueStore : IDisposable
                 ON CONFLICT(hash, view) DO UPDATE SET
                     count         = count + 1,
                     last_seen_utc = excluded.last_seen_utc,
+                    -- Latest classification wins: when a rule fix reclassifies a
+                    -- signature (the 1.5.0 defaults called |Error| lines Fatal), the
+                    -- stored row must follow, or it shows the wrong severity forever.
+                    severity      = excluded.severity,
                     -- Keep the richest sample: one that carries a stack trace beats one that doesn't.
                     sample_line   = CASE WHEN issues.sample_detail IS NULL AND excluded.sample_detail IS NOT NULL
                                          THEN excluded.sample_line ELSE issues.sample_line END,

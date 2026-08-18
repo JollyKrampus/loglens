@@ -28,6 +28,9 @@ public sealed class MainVm : ObservableObject, IDisposable
     /// <summary>Something a shell should show the user (message box, toast, status bar…).</summary>
     public event Action<string>? UserMessage;
 
+    /// <summary>A quiet nudge for the status bar — never a dialog.</summary>
+    public event Action<string>? FormatHint;
+
     public AppSettings Settings => _ws.Settings;
     public AlertSettings Alerts => _ws.Alerts;
     public List<HighlightRule> GlobalRules => _ws.Rules;
@@ -93,6 +96,7 @@ public sealed class MainVm : ObservableObject, IDisposable
         view.LinesIngested += (v, tab, lines) => LinesIngested?.Invoke(v, tab, lines);
         view.StateChanged += () => Dirty = true;
         view.NotifyUser = m => UserMessage?.Invoke(m);
+        view.FormatHint += m => FormatHint?.Invoke(m);
         return view;
     }
 
