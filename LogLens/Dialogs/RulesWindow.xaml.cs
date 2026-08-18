@@ -195,8 +195,8 @@ public partial class RulesWindow : Window
         }
 
         TestResult.Text = $"{match.Name}  ({match.Severity})";
-        TestResult.Foreground = match.ForegroundBrush ?? (Brush)FindResource("App.Fg");
-        TestResult.Background = match.BackgroundBrush ?? Brushes.Transparent;
+        TestResult.Foreground = Core.CachedHexBrushConverter.Resolve(match.Foreground) ?? (Brush)FindResource("App.Fg");
+        TestResult.Background = Core.CachedHexBrushConverter.Resolve(match.Background) ?? Brushes.Transparent;
         TestResult.FontWeight = match.Bold ? FontWeights.Bold : FontWeights.Normal;
     }
 

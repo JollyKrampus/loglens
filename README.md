@@ -157,7 +157,7 @@ the path in use.
 | **Clear** | Empties the on-screen buffer. Your log file is never written to. |
 | **Show / Hide** | Live include/exclude filters. `.*` treats them as regex, `Aa` makes them case-sensitive. |
 | **F / E / W / I / D chips** | Severity filter — any combination at once, so "errors, warnings and fatals only" is three clicks. Stack traces and other unclassified lines follow the line they belong to, so filtering to errors keeps each error's trace attached. All chips on = show everything. |
-| **Editor** | Opens the tab's log file in your default editor (Notepad if nothing is associated with `.log`). Also on the right-click menu, along with "Show in File Explorer". A wildcard tab opens whichever file it is tailing right now. |
+| **Editor** | Opens the tab's log file in your default editor (Notepad if nothing is associated with `.log`). Also on the right-click menu, along with "Show in File Explorer". A wildcard tab opens whichever file it is tailing right now. **In the merged view** these act on the *selected line's* source file — every merged line knows where it came from — and "Go to this line's file tab" jumps to that file's tab with the line selected. |
 | **Find** | `Ctrl+F`. Enter for next, Shift+Enter for previous, with a match count. |
 | **Opening logs… n/m** | Status-bar progress while the initial tail reads run — with dozens of large files that phase is what makes startup feel slow. If it drags, lower **Load at most N KB when opening** in Settings: 40 files × 2 MB initial window is 80 MB of reads. |
 
@@ -289,6 +289,19 @@ LogLens does not talk to Jira. It writes the ticket for you and you paste it in.
   of the list so what's left is what nobody has ticketed yet.
 - **Ignore** parks a known-noisy issue without deleting its history.
 - **Export visible as CSV** for a spreadsheet.
+
+### Issues are kept per view
+
+The same signature in Dev and in Prod is **two separate issues**, with independent
+counts, Jira keys and ignore flags — deliberately. A bug already fixed in dev can
+still be live in prod, and dev noise from mid-development must never pollute the
+prod list. The Issues window has a view dropdown to focus on one environment;
+filing or ignoring an issue in one view leaves the same fault open in the others.
+
+Databases written by 1.3 and earlier (which merged views) migrate automatically on
+first open: every row keeps its count, Jira key, notes and ignore flag. A row that
+had genuinely mixed views keeps its combined label (e.g. `Prod,Test`) as a legacy
+entry, and everything recorded from then on is scoped properly.
 
 ### Where it lives
 

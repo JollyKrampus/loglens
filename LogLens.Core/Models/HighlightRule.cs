@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using System.Windows.Media;
 using LogLens.Core;
 
 namespace LogLens.Models;
@@ -44,19 +43,23 @@ public sealed class HighlightRule : ObservableObject
     }
 
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
-    public bool Bold { get => _bold; set { if (Set(ref _bold, value)) Raise(nameof(PreviewWeight)); } }
+    public bool Bold { get => _bold; set => Set(ref _bold, value); }
 
-    /// <summary>Hex colour, e.g. #FFCCCC. Empty means "inherit the theme default".</summary>
+    /// <summary>
+    /// Hex colour, e.g. #FFCCCC. Empty means "inherit the theme default". Kept as a
+    /// string on purpose — this type is cross-platform and the view layer owns the
+    /// conversion to whatever brush type its framework uses.
+    /// </summary>
     public string Foreground
     {
         get => _foreground;
-        set { if (Set(ref _foreground, value)) InvalidateBrushes(); }
+        set => Set(ref _foreground, value);
     }
 
     public string Background
     {
         get => _background;
-        set { if (Set(ref _background, value)) InvalidateBrushes(); }
+        set => Set(ref _background, value);
     }
 
     /// <summary>Feeds the per-view counters ("3 errors in prod") and the tab alert dot.</summary>
@@ -66,56 +69,8 @@ public sealed class HighlightRule : ObservableObject
 
     [JsonIgnore] private Regex? _compiled;
     [JsonIgnore] private bool _compileFailed;
-    [JsonIgnore] private Brush? _fg;
-    [JsonIgnore] private Brush? _bg;
 
     [JsonIgnore] public string? CompileError { get; private set; }
-
-    [JsonIgnore] public Brush? PreviewForeground => ForegroundBrush;
-    [JsonIgnore] public Brush? PreviewBackground => BackgroundBrush;
-    [JsonIgnore] public System.Windows.FontWeight PreviewWeight
-        => Bold ? System.Windows.FontWeights.Bold : System.Windows.FontWeights.Normal;
-
-    [JsonIgnore]
-    public Brush? ForegroundBrush
-    {
-        get
-        {
-            if (_fg is null && !string.IsNullOrWhiteSpace(Foreground)) _fg = MakeBrush(Foreground);
-            return _fg;
-        }
-    }
-
-    [JsonIgnore]
-    public Brush? BackgroundBrush
-    {
-        get
-        {
-            if (_bg is null && !string.IsNullOrWhiteSpace(Background)) _bg = MakeBrush(Background);
-            return _bg;
-        }
-    }
-
-    private static Brush? MakeBrush(string hex)
-    {
-        try
-        {
-            var c = (Color)ColorConverter.ConvertFromString(hex)!;
-            var b = new SolidColorBrush(c);
-            b.Freeze();
-            return b;
-        }
-        catch { return null; }
-    }
-
-    private void InvalidateBrushes()
-    {
-        _fg = null; _bg = null;
-        Raise(nameof(ForegroundBrush));
-        Raise(nameof(BackgroundBrush));
-        Raise(nameof(PreviewForeground));
-        Raise(nameof(PreviewBackground));
-    }
 
     private void Invalidate()
     {

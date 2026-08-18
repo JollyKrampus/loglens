@@ -9,21 +9,12 @@ namespace LogLens.ViewModels;
 /// <summary>A log group — "Dev", "Test", "Prod" — and the tabs inside it.</summary>
 public sealed class ViewVm : ObservableObject, IDisposable
 {
-    /// <summary>Distinct, readable-on-dark colours for the merged view's source column.</summary>
-    private static readonly Brush[] SourcePalette = CreatePalette(
-        "#7FC8FF", "#9CE39C", "#FFC061", "#E39CE3", "#8FE3E3", "#FFA0A0", "#C6C68F", "#B0B0FF");
-
-    private static Brush[] CreatePalette(params string[] hexes)
-    {
-        var brushes = new Brush[hexes.Length];
-        for (int i = 0; i < hexes.Length; i++)
-        {
-            var b = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hexes[i])!);
-            b.Freeze();
-            brushes[i] = b;
-        }
-        return brushes;
-    }
+    /// <summary>
+    /// Distinct, readable-on-dark colours for the merged view's source column.
+    /// Hex, not brushes: LogLine is cross-platform and the view converts.
+    /// </summary>
+    private static readonly string[] SourcePalette =
+        ["#7FC8FF", "#9CE39C", "#FFC061", "#E39CE3", "#8FE3E3", "#FFA0A0", "#C6C68F", "#B0B0FF"];
 
     private readonly AppSettings _settings;
     private readonly Func<IEnumerable<HighlightRule>> _globalRules;
@@ -136,7 +127,36 @@ public sealed class ViewVm : ObservableObject, IDisposable
             {
                 _merged = new MergedTab(_settings, DescribeSources)
                 {
-                    ReloadAllRequested = () => { foreach (var t in FileTabs) t.ReloadFromDisk(); }
+                    ReloadAllRequested = () => { foreach (var t in FileTabs) t.ReloadFromDisk(); },
+
+                    // "Go to this line's file tab": switch tabs, then reveal the line
+                    // once the pane has rebound to the new tab — hence the BeginInvoke.
+                    // A miss is reported, never silent: a tab switch with nothing
+                    // selected and no explanation reads as the feature not working.
+                    NavigateToSourceRequested = (tab, line) =>
+                    {
+                        SelectedTab = tab;
+                        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+                        {
+                            switch (tab.RevealLineByNumber(line.SourceLineNumber))
+                            {
+                                case LogPaneVm.RevealOutcome.HiddenByFilters:
+                                    System.Windows.MessageBox.Show(
+                                        "That line is in this tab, but currently hidden by its filters — "
+                                        + "clear the Show/Hide filters or severity chips to see it.",
+                                        "LogLens", System.Windows.MessageBoxButton.OK,
+                                        System.Windows.MessageBoxImage.Information);
+                                    break;
+
+                                case LogPaneVm.RevealOutcome.NotInBuffer:
+                                    System.Windows.MessageBox.Show(
+                                        "That line has scrolled out of this tab's buffer.",
+                                        "LogLens", System.Windows.MessageBoxButton.OK,
+                                        System.Windows.MessageBoxImage.Information);
+                                    break;
+                            }
+                        });
+                    }
                 };
                 Tabs.Insert(0, _merged);
                 _merged.ApplyRules(BuildRules());
@@ -211,7 +231,7 @@ public sealed class ViewVm : ObservableObject, IDisposable
         foreach (var t in FileTabs)
         {
             t.SourceIndex = i;
-            t.SourceBrush = SourcePalette[i % SourcePalette.Length];
+            t.SourceColor = SourcePalette[i % SourcePalette.Length];
             i++;
         }
     }

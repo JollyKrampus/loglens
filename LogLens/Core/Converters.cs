@@ -89,6 +89,56 @@ public sealed class PositiveToVisibilityConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>
+/// Hex string to a cached frozen brush; null/empty becomes UnsetValue so the element
+/// inherits the theme colour. This is where colour resolution moved when the model
+/// layer was decoupled from WPF — the cache keeps it per-colour, not per-line, which
+/// matters when 200k virtualised rows share a handful of rule colours.
+/// </summary>
+public sealed class CachedHexBrushConverter : IValueConverter
+{
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Brush?> Cache = new();
+
+    public static Brush? Resolve(string? hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex)) return null;
+
+        return Cache.GetOrAdd(hex, static h =>
+        {
+            try
+            {
+                var b = new SolidColorBrush((Color)ColorConverter.ConvertFromString(h)!);
+                b.Freeze();
+                return b;
+            }
+            catch { return null; }
+        });
+    }
+
+    /// <summary>
+    /// When true, null/empty resolves to Transparent instead of UnsetValue — for
+    /// backgrounds, where "no colour" means transparent rather than inherit.
+    /// </summary>
+    public bool TransparentFallback { get; set; }
+
+    public object Convert(object? v, Type t, object? p, CultureInfo c)
+        => Resolve(v as string)
+           ?? (TransparentFallback ? Brushes.Transparent : (object)DependencyProperty.UnsetValue);
+
+    public object ConvertBack(object? v, Type t, object? p, CultureInfo c)
+        => throw new NotSupportedException();
+}
+
+/// <summary>Rule.Bold to a font weight, replacing the FontWeight the model used to expose.</summary>
+public sealed class BoolToFontWeightConverter : IValueConverter
+{
+    public object Convert(object? v, Type t, object? p, CultureInfo c)
+        => v is true ? FontWeights.Bold : FontWeights.Normal;
+
+    public object ConvertBack(object? v, Type t, object? p, CultureInfo c)
+        => throw new NotSupportedException();
+}
+
 /// <summary>Hex string to brush, for the swatches in the rules editor.</summary>
 public sealed class HexToBrushConverter : IValueConverter
 {

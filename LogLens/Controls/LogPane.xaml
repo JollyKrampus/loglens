@@ -10,8 +10,14 @@
         <Style x:Key="LogItemStyle" TargetType="ListBoxItem">
             <Setter Property="Padding" Value="4,0" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <!--
+              CachedHexBg, not the uncached swatch converter: with container recycling
+              this binding re-runs on every realise/recycle, and an uncached converter
+              allocates a brush per highlighted row — the exact per-line cost the
+              cache was written to avoid.
+            -->
             <Setter Property="Background"
-                    Value="{Binding Background, Converter={StaticResource NullToTransparent}}" />
+                    Value="{Binding Background, Converter={StaticResource CachedHexBg}}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -195,14 +201,14 @@
                                    Width="130" Margin="0,0,10,0"
                                    TextTrimming="CharacterEllipsis"
                                    ToolTip="{Binding SourceName}"
-                                   Foreground="{Binding SourceBrush, Converter={StaticResource InheritIfNull}}"
+                                   Foreground="{Binding SourceColor, Converter={StaticResource CachedHexBrush}}"
                                    FontFamily="{Binding LogFontFamily, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
                                    FontSize="{Binding LogFontSize, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
                                    Visibility="{Binding DataContext.ShowsSourceColumn, RelativeSource={RelativeSource AncestorType=local:LogPane}, Converter={StaticResource BoolToVis}}" />
 
                         <TextBlock Text="{Binding Text}"
-                                   Foreground="{Binding Foreground, Converter={StaticResource InheritIfNull}}"
-                                   FontWeight="{Binding Weight}"
+                                   Foreground="{Binding Foreground, Converter={StaticResource CachedHexBrush}}"
+                                   FontWeight="{Binding Bold, Converter={StaticResource BoolToWeight}}"
                                    FontFamily="{Binding LogFontFamily, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
                                    FontSize="{Binding LogFontSize, RelativeSource={RelativeSource AncestorType=local:LogPane}}"
                                    TextWrapping="{Binding WordWrap, RelativeSource={RelativeSource AncestorType=local:LogPane}, Converter={StaticResource BoolToWrap}}" />
@@ -220,10 +226,15 @@
                     <MenuItem Header="Filter to lines like this" Click="FilterToSelection_Click" />
                     <MenuItem Header="Clear filters" Click="ClearFilters_Click" />
                     <Separator />
-                    <MenuItem Header="Open log in default editor" Click="OpenInEditor_Click"
-                              IsEnabled="{Binding SupportsOpenInEditor}" />
-                    <MenuItem Header="Show log in File Explorer" Click="RevealInExplorer_Click"
-                              IsEnabled="{Binding SupportsOpenInEditor}" />
+                    <!--
+                      In a file tab these act on the tab's file. In the merged view
+                      they act on the SELECTED LINE's source file — every line knows
+                      which file it came from — so they are never dead entries.
+                    -->
+                    <MenuItem Header="Go to this line's file tab" Click="GoToSourceTab_Click"
+                              Visibility="{Binding ShowsSourceColumn, Converter={StaticResource BoolToVis}}" />
+                    <MenuItem Header="Open log in default editor" Click="OpenInEditor_Click" />
+                    <MenuItem Header="Show log in File Explorer" Click="RevealInExplorer_Click" />
                 </ContextMenu>
             </ListBox.ContextMenu>
         </ListBox>

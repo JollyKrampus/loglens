@@ -35,6 +35,12 @@ public partial class IssuesWindow : Window
 
     // ---- loading -------------------------------------------------------------------
 
+    private const string AllViews = "(all views)";
+
+    /// <summary>The selected view filter, or null for all.</summary>
+    private string? ViewScope =>
+        ViewFilter.SelectedItem is string s && s != AllViews ? s : null;
+
     private void Reload()
     {
         if (_loading) return;
@@ -42,7 +48,17 @@ public partial class IssuesWindow : Window
         // Make sure anything still queued is on disk before we read.
         _recorder.Flush();
 
-        var counts = _recorder.Store.CountsBySeverity(ShowIgnored.IsChecked == true);
+        // Keep the view dropdown in step with what the database has actually seen.
+        var views = _recorder.Store.DistinctViews();
+        var keepView = ViewFilter.SelectedItem as string;
+        var items = new List<string> { AllViews };
+        items.AddRange(views);
+        _loading = true;
+        ViewFilter.ItemsSource = items;
+        ViewFilter.SelectedItem = items.Contains(keepView ?? "") ? keepView : AllViews;
+        _loading = false;
+
+        var counts = _recorder.Store.CountsBySeverity(ShowIgnored.IsChecked == true, ViewScope);
         FatalFilter.Content = $"Fatal ({counts.GetValueOrDefault(Severity.Fatal)})";
         ErrorFilter.Content = $"Error ({counts.GetValueOrDefault(Severity.Error)})";
         WarnFilter.Content = $"Warn ({counts.GetValueOrDefault(Severity.Warn)})";
@@ -59,6 +75,7 @@ public partial class IssuesWindow : Window
         {
             results.AddRange(_recorder.Store.Query(
                 severity: sev,
+                view: ViewScope,
                 includeIgnored: ShowIgnored.IsChecked == true,
                 includeFiled: HideFiled.IsChecked != true,
                 search: search));
@@ -70,11 +87,11 @@ public partial class IssuesWindow : Window
             .ThenByDescending(i => i.LastSeenUtc)
             .ToList();
 
-        var keepHash = Selected?.Hash;
+        var keepKey = Selected is { } sel ? (sel.Hash, sel.View) : default;
         Grid.ItemsSource = _rows;
 
-        if (keepHash is not null)
-            Grid.SelectedItem = _rows.FirstOrDefault(i => i.Hash == keepHash);
+        if (keepKey != default)
+            Grid.SelectedItem = _rows.FirstOrDefault(i => (i.Hash, i.View) == keepKey);
 
         long total = _rows.Sum(i => i.Count);
         StatusText.Text = _rows.Count == 0
@@ -104,7 +121,7 @@ public partial class IssuesWindow : Window
         var facts = new StringBuilder();
         facts.Append($"{issue.Severity} · seen {issue.Count:N0} time(s)\n");
         facts.Append($"First {issue.FirstSeenLocal:yyyy-MM-dd HH:mm:ss}   Last {issue.LastSeenLocal:yyyy-MM-dd HH:mm:ss}\n");
-        if (!string.IsNullOrWhiteSpace(issue.Views)) facts.Append($"Environments: {issue.Views}\n");
+        if (!string.IsNullOrWhiteSpace(issue.View)) facts.Append($"View: {issue.View}\n");
         if (!string.IsNullOrWhiteSpace(issue.Sources)) facts.Append($"Files: {issue.Sources}\n");
         if (!string.IsNullOrWhiteSpace(issue.ExceptionType)) facts.Append($"Exception: {issue.ExceptionType}\n");
         if (!string.IsNullOrWhiteSpace(issue.FaultingMethod)) facts.Append($"Method: {issue.FaultingMethod}\n");
@@ -201,7 +218,7 @@ public partial class IssuesWindow : Window
         var key = JiraKeyBox.Text.Trim();
         if (key == (issue.JiraKey ?? "")) return;
 
-        _recorder.Store.SetJiraKey(issue.Hash, key.Length == 0 ? null : key);
+        _recorder.Store.SetJiraKey(issue.Hash, issue.View, key.Length == 0 ? null : key);
         issue.JiraKey = key.Length == 0 ? null : key;
         Reload();
     }
@@ -209,7 +226,7 @@ public partial class IssuesWindow : Window
     private void Ignore_Click(object sender, RoutedEventArgs e)
     {
         if (Selected is not { } issue) return;
-        _recorder.Store.SetIgnored(issue.Hash, !issue.Ignored);
+        _recorder.Store.SetIgnored(issue.Hash, issue.View, !issue.Ignored);
         Reload();
     }
 
@@ -223,7 +240,7 @@ public partial class IssuesWindow : Window
                 "LogLens", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
 
-        _recorder.Store.Delete(issue.Hash);
+        _recorder.Store.Delete(issue.Hash, issue.View);
         Reload();
     }
 
@@ -253,16 +270,16 @@ public partial class IssuesWindow : Window
         try
         {
             var sb = new StringBuilder();
-            sb.AppendLine("Severity,Count,FirstSeen,LastSeen,Title,Exception,Method,Environments,Files,JiraKey");
+            sb.AppendLine("Severity,View,Count,FirstSeen,LastSeen,Title,Exception,Method,Files,JiraKey");
 
             foreach (var i in _rows)
             {
                 sb.AppendLine(string.Join(",",
-                    Csv(i.Severity.ToString()), Csv(i.Count.ToString()),
+                    Csv(i.Severity.ToString()), Csv(i.View), Csv(i.Count.ToString()),
                     Csv(i.FirstSeenLocal.ToString("yyyy-MM-dd HH:mm:ss")),
                     Csv(i.LastSeenLocal.ToString("yyyy-MM-dd HH:mm:ss")),
                     Csv(i.Title), Csv(i.ExceptionType), Csv(i.FaultingMethod),
-                    Csv(i.Views), Csv(i.Sources), Csv(i.JiraKey)));
+                    Csv(i.Sources), Csv(i.JiraKey)));
             }
 
             File.WriteAllText(dlg.FileName, sb.ToString(), Encoding.UTF8);

@@ -13,8 +13,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Regenerate with tools\New-AppIcon.ps1. Sets the exe, taskbar and window icon. -->
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.3.0</Version>
-    <InformationalVersion>1.3.0</InformationalVersion>
+    <Version>1.4.0</Version>
+    <InformationalVersion>1.4.0</InformationalVersion>
     <Product>LogLens</Product>
     <AssemblyTitle>LogLens - real-time log viewer</AssemblyTitle>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -40,13 +40,13 @@
     <Using Remove="System.Drawing" />
   </ItemGroup>
   <!--
-    Pinned to the 8.x line to match net8.0; the 10.x packages drag in newer
-    Microsoft.Extensions assemblies for no benefit here. Microsoft.Data.Sqlite
-    carries a native e_sqlite3, which single-file publish handles because
-    IncludeNativeLibrariesForSelfExtract is on.
+    Everything that doesn't touch WPF lives in LogLens.Core (models, tailing,
+    issue store, updater…) so the planned Avalonia app can share it. Sqlite comes
+    in transitively through Core; its native e_sqlite3 still survives single-file
+    publish because IncludeNativeLibrariesForSelfExtract is on.
   -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+    <ProjectReference Include="..\LogLens.Core\LogLens.Core.csproj" />
   </ItemGroup>
 
   <!--

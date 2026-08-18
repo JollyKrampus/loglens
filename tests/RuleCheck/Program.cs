@@ -624,39 +624,50 @@ internal static class Program
                     new IssueOccurrence(other, Severity.Fatal, "FATAL Worker Host is going down", null, "Prod", "app.log", now.AddSeconds(3)),
                 ]);
 
+                // The same fault in Prod and Test must be TWO rows — a bug fixed in
+                // dev can still be live in prod, so views never share counters.
                 var errors = store.Query(Severity.Error);
-                Report(errors.Count == 1 && errors[0].Count == 3,
-                    "three sightings of one fault aggregate into a single issue with count 3",
-                    $"rows={errors.Count}, count={errors.FirstOrDefault()?.Count}");
+                var prod = errors.FirstOrDefault(i => i.View == "Prod");
+                var test = errors.FirstOrDefault(i => i.View == "Test");
+                Report(errors.Count == 2 && prod?.Count == 2 && test?.Count == 1,
+                    "the same fault in two views stays two rows with independent counts",
+                    $"rows={errors.Count}, prod={prod?.Count}, test={test?.Count}");
 
-                var row = errors[0];
-                Report(row.Views.Contains("Prod") && row.Views.Contains("Test"),
-                    "every environment it was seen in is recorded", $"views='{row.Views}'");
+                Report(prod?.Sources == "app.log" && test?.Sources == "other.log",
+                    "each row records its own view's source files",
+                    $"prod='{prod?.Sources}' test='{test?.Sources}'");
 
-                Report(row.Sources.Contains("app.log") && row.Sources.Contains("other.log"),
-                    "every source file is recorded", $"sources='{row.Sources}'");
+                Report(store.Query(Severity.Error, view: "Prod").Count == 1
+                       && store.Query(Severity.Error, view: "Test").Count == 1
+                       && store.Query(Severity.Error, view: "Dev").Count == 0,
+                    "querying by view isolates that view's issues", "");
 
-                Report(!row.Views.Contains("Prod,Prod"),
-                    "repeat sightings do not duplicate the environment list", $"views='{row.Views}'");
+                var views = store.DistinctViews();
+                Report(views.Contains("Prod") && views.Contains("Test") && views.Count == 2,
+                    "the view list for the filter dropdown is discovered from the data",
+                    $"got [{string.Join(", ", views)}]");
 
                 var counts = store.CountsBySeverity();
-                Report(counts.GetValueOrDefault(Severity.Error) == 1 && counts.GetValueOrDefault(Severity.Fatal) == 1,
-                    "counts are reported per severity",
+                Report(counts.GetValueOrDefault(Severity.Error) == 2 && counts.GetValueOrDefault(Severity.Fatal) == 1,
+                    "severity counts see per-view rows",
                     $"error={counts.GetValueOrDefault(Severity.Error)}, fatal={counts.GetValueOrDefault(Severity.Fatal)}");
 
-                // Jira key round-trip and the "hide filed" filter.
-                store.SetJiraKey(row.Hash, "PLAT-1234");
-                Report(store.Query(Severity.Error)[0].JiraKey == "PLAT-1234",
-                    "a Jira key can be recorded against an issue",
-                    $"got {store.Query(Severity.Error)[0].JiraKey ?? "null"}");
+                Report(store.CountsBySeverity(view: "Test").GetValueOrDefault(Severity.Error) == 1
+                       && store.CountsBySeverity(view: "Test").GetValueOrDefault(Severity.Fatal) == 0,
+                    "severity counts can be scoped to one view", "");
 
-                Report(store.Query(Severity.Error, includeFiled: false).Count == 0,
-                    "filed issues can be filtered out", "a filed issue was still returned");
+                // A Jira key on the Prod row must not mark the Test row as filed.
+                store.SetJiraKey(prod!.Hash, "Prod", "PLAT-1234");
+                var unfiled = store.Query(Severity.Error, includeFiled: false);
+                Report(unfiled.Count == 1 && unfiled[0].View == "Test",
+                    "filing an issue in one view leaves the same fault open in another",
+                    $"unfiled rows={unfiled.Count}");
 
-                store.SetIgnored(row.Hash, true);
-                Report(store.Query(Severity.Error).Count == 0
-                       && store.Query(Severity.Error, includeIgnored: true).Count == 1,
-                    "ignored issues are hidden unless asked for", "ignore filter did not apply");
+                store.SetIgnored(test!.Hash, "Test", true);
+                Report(store.Query(Severity.Error, view: "Test").Count == 0
+                       && store.Query(Severity.Error, view: "Test", includeIgnored: true).Count == 1
+                       && store.Query(Severity.Error, view: "Prod", includeFiled: true).Count == 1,
+                    "ignoring is per view too", "ignore leaked across views");
 
                 // The generated ticket must contain the facts that make it useful.
                 var fatal = store.Query(Severity.Fatal)[0];
@@ -673,6 +684,104 @@ internal static class Program
                 Report(reopened.Query(Severity.Fatal).Count == 1,
                     "the database survives being closed and reopened",
                     $"found {reopened.Query(Severity.Fatal).Count} fatal issue(s)");
+            }
+        }
+        finally
+        {
+            try
+            {
+                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(path) + "*"))
+                    File.Delete(f);
+            }
+            catch { /* temp files */ }
+        }
+
+        CheckIssueStoreMigration();
+    }
+
+    /// <summary>
+    /// Teams already have databases written by 1.3, which keyed on hash alone.
+    /// Opening one must carry every row over — with its Jira key, notes and ignore
+    /// flag — and new sightings must land in proper per-view rows beside them.
+    /// </summary>
+    private static void CheckIssueStoreMigration()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"loglens-migrate-test-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            // Build a database exactly as IssueStore v1 (≤1.3) created it — WAL mode
+            // and BOTH v1 indexes included. The indexes matter: their names collide
+            // with the v2 DDL's CREATE INDEX IF NOT EXISTS, and an index-less fixture
+            // masked exactly that bug once already.
+            using (var c = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"))
+            {
+                c.Open();
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = """
+                    PRAGMA journal_mode = WAL;
+                    CREATE TABLE issues (
+                        hash TEXT PRIMARY KEY, severity INTEGER NOT NULL, title TEXT NOT NULL,
+                        signature TEXT NOT NULL, exception_type TEXT, faulting_method TEXT, logger TEXT,
+                        sample_line TEXT NOT NULL, sample_detail TEXT, count INTEGER NOT NULL DEFAULT 0,
+                        first_seen_utc TEXT NOT NULL, last_seen_utc TEXT NOT NULL,
+                        views TEXT NOT NULL DEFAULT '', sources TEXT NOT NULL DEFAULT '',
+                        jira_key TEXT, notes TEXT, ignored INTEGER NOT NULL DEFAULT 0
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_issues_severity ON issues(severity, last_seen_utc DESC);
+                    CREATE INDEX IF NOT EXISTS ix_issues_count    ON issues(count DESC);
+                    INSERT INTO issues VALUES
+                        ('aaaa', 5, 'Old error', 'sig-a', NULL, NULL, NULL, 'sample', NULL, 42,
+                         '2026-08-01T00:00:00.0000000Z', '2026-08-10T00:00:00.0000000Z',
+                         'Prod', 'app.log', 'PLAT-99', 'my notes', 0),
+                        ('bbbb', 6, 'Old fatal seen everywhere', 'sig-b', NULL, NULL, NULL, 'sample2', NULL, 7,
+                         '2026-08-02T00:00:00.0000000Z', '2026-08-11T00:00:00.0000000Z',
+                         'Prod,Test', 'app.log', NULL, NULL, 1);
+                    """;
+                cmd.ExecuteNonQuery();
+            }
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+            using (var store = new IssueStore(path))
+            {
+                var all = store.Query(includeIgnored: true, includeFiled: true, limit: 10);
+                var a = all.FirstOrDefault(i => i.Hash == "aaaa");
+                var b = all.FirstOrDefault(i => i.Hash == "bbbb");
+
+                Report(a is not null && a.View == "Prod" && a.Count == 42
+                       && a.JiraKey == "PLAT-99" && a.Notes == "my notes",
+                    "a 1.3 row migrates with its count, Jira key and notes intact",
+                    a is null ? "row missing" : $"view={a.View} count={a.Count} jira={a.JiraKey}");
+
+                Report(b is not null && b.View == "Prod,Test" && b.Ignored,
+                    "a genuinely mixed 1.3 row keeps its combined label and ignore flag",
+                    b is null ? "row missing" : $"view='{b.View}' ignored={b.Ignored}");
+
+                // New sightings after migration scope per view, next to the legacy row.
+                var fp = SignatureBuilder.Build("ERROR Worker fresh problem after migration");
+                store.Record([
+                    new IssueOccurrence(fp, Severity.Error, "ERROR Worker fresh problem after migration",
+                        null, "Dev", "dev.log", DateTime.UtcNow)
+                ]);
+
+                Report(store.Query(Severity.Error, view: "Dev").Count == 1,
+                    "new sightings after migration land in per-view rows", "");
+            }
+
+            // The migrated schema must match what a fresh install creates — the
+            // index-name collision with v1 silently dropped ix_issues_count once.
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            using (var check = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"))
+            {
+                check.Open();
+                using var cmd = check.CreateCommand();
+                cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' " +
+                                  "AND name IN ('ix_issues_view_sev','ix_issues_count')";
+                var indexCount = Convert.ToInt32(cmd.ExecuteScalar());
+                Report(indexCount == 2,
+                    "the migrated database has both v2 indexes, same as a fresh install",
+                    $"found {indexCount} of 2");
             }
         }
         finally

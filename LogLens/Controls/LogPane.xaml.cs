@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using LogLens.Models;
 using LogLens.Services;
 using LogLens.ViewModels;
 
@@ -93,6 +94,12 @@ public partial class LogPane : UserControl
         if (_tab is null) return;
 
         _tab.RequestScrollToEnd = ScheduleScrollToEnd;
+        _tab.RevealIndexRequested = i =>
+        {
+            if (i < 0 || i >= Lines.Items.Count) return;
+            Lines.SelectedIndex = i;
+            Lines.ScrollIntoView(Lines.SelectedItem);
+        };
         if (_tab.FollowTail) ScheduleScrollToEnd();
     }
 
@@ -129,7 +136,10 @@ public partial class LogPane : UserControl
     /// </summary>
     private void ScrollToEndCore()
     {
-        if (_tab is null) return;
+        // Re-check FollowTail at run time, not just at queue time: a go-to-source
+        // reveal can turn it off between the two, and without this check the queued
+        // scroll dragged the view back to the tail right after the reveal landed.
+        if (_tab is null || !_tab.FollowTail) return;
 
         var items = _tab.Display;
         if (items.Count == 0) return;
@@ -164,10 +174,42 @@ public partial class LogPane : UserControl
     // tab tailing an unreachable UNC share that means blocking for the full SMB
     // connect timeout — long enough to take the whole window to "not responding".
 
+    /// <summary>
+    /// The file these actions target: the tab's own file, or — on the merged
+    /// timeline, which has no single file — the SELECTED LINE's source file.
+    /// </summary>
+    private LogTab? ResolveTargetTab(out string? whyNot)
+    {
+        whyNot = null;
+
+        if (_tab is LogTab file) return file;
+
+        if (_tab is MergedTab merged)
+        {
+            if (Lines.SelectedItem is not LogLine line)
+            {
+                whyNot = "Select a line first — in the merged view these act on that line's file.";
+                return null;
+            }
+
+            var source = merged.SourceTabFor(line);
+            if (source is null) whyNot = "That line's file tab is no longer in this view.";
+            return source;
+        }
+
+        whyNot = "No log file here.";
+        return null;
+    }
+
     private async void OpenInEditor_Click(object sender, RoutedEventArgs e)
     {
-        if (_tab is null || !_tab.SupportsOpenInEditor) return;
-        var tab = _tab;
+        var tab = ResolveTargetTab(out var whyNot);
+        if (tab is null)
+        {
+            if (whyNot is not null)
+                MessageBox.Show(whyNot, "LogLens", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
 
         var error = await Task.Run(() => ShellOpen.OpenInEditor(tab.ResolvedFilePath));
         if (error is not null)
@@ -176,12 +218,39 @@ public partial class LogPane : UserControl
 
     private async void RevealInExplorer_Click(object sender, RoutedEventArgs e)
     {
-        if (_tab is null || !_tab.SupportsOpenInEditor) return;
-        var tab = _tab;
+        var tab = ResolveTargetTab(out var whyNot);
+        if (tab is null)
+        {
+            if (whyNot is not null)
+                MessageBox.Show(whyNot, "LogLens", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
 
         var error = await Task.Run(() => ShellOpen.RevealInExplorer(tab.ResolvedFilePath));
         if (error is not null)
             MessageBox.Show(error, "LogLens", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    private void GoToSourceTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (_tab is not MergedTab merged) return;
+
+        if (Lines.SelectedItem is not LogLine line)
+        {
+            MessageBox.Show("Select a line first.", "LogLens",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var source = merged.SourceTabFor(line);
+        if (source is null)
+        {
+            MessageBox.Show("That line's file tab is no longer in this view.", "LogLens",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        merged.NavigateToSourceRequested?.Invoke(source, line);
     }
 
     private void ShowFind_Click(object sender, RoutedEventArgs e) => ShowFind();

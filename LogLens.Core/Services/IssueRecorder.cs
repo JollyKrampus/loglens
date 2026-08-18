@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
 using LogLens.Models;
-using LogLens.ViewModels;
 
 namespace LogLens.Services;
 

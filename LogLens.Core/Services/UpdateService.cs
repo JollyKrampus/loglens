@@ -58,11 +58,16 @@ public static class UpdateService
 
     private static Version ReadCurrentVersion()
     {
-        var informational = Assembly.GetExecutingAssembly()
+        // The ENTRY assembly, not the executing one: this code now lives in
+        // LogLens.Core, whose own version is irrelevant — the exe's version is what
+        // updates compare against. GetEntryAssembly is null only in exotic hosts.
+        var exe = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+
+        var informational = exe
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
 
         return ParseVersion(informational)
-               ?? Assembly.GetExecutingAssembly().GetName().Version
+               ?? exe.GetName().Version
                ?? new Version(0, 0, 0);
     }
 

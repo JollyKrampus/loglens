@@ -4,10 +4,20 @@ using LogLens.Models;
 
 namespace LogLens.Services;
 
-/// <summary>One distinct problem, aggregated across every time it has been seen.</summary>
+/// <summary>One distinct problem, aggregated per view it was seen in.</summary>
 public sealed class LogIssue
 {
     public string Hash { get; set; } = "";
+
+    /// <summary>
+    /// The view (Dev, Test, Prod…) this row belongs to. Issues are deliberately NOT
+    /// merged across views: a bug already fixed in dev can still be live in prod,
+    /// and dev noise from mid-development must not pollute the prod list — so the
+    /// same signature in two views is two rows with independent counts, Jira keys
+    /// and ignore flags.
+    /// </summary>
+    public string View { get; set; } = "";
+
     public Severity Severity { get; set; }
     public string Title { get; set; } = "";
     public string Signature { get; set; } = "";
@@ -25,8 +35,7 @@ public sealed class LogIssue
     public DateTime FirstSeenUtc { get; set; }
     public DateTime LastSeenUtc { get; set; }
 
-    /// <summary>Comma-separated view and file names this has been seen in.</summary>
-    public string Views { get; set; } = "";
+    /// <summary>Comma-separated file names this has been seen in, within its view.</summary>
     public string Sources { get; set; } = "";
 
     /// <summary>Set once you've raised the ticket, so it stops looking new.</summary>
@@ -56,6 +65,11 @@ public sealed record IssueOccurrence(
 /// over weeks: an upsert with a counter increment is one statement, and it stays
 /// fast at millions of sightings. Writes are batched off the UI thread — log
 /// ingestion must never wait on a disk write.
+///
+/// The key is (hash, view): the same fault in Dev and Prod is two independent rows.
+/// Databases written by 1.3 and earlier keyed on hash alone with an accumulated
+/// views list; Initialise migrates them, carrying each old row over with its views
+/// string as the view value, so history is kept and new sightings scope correctly.
 ///
 /// The file sits beside the workspace, so a portable install keeps its history on
 /// the stick with it.
@@ -96,36 +110,103 @@ public sealed class IssueStore : IDisposable
         lock (_gate)
         {
             using var c = Open();
+
+            using (var pragma = c.CreateCommand())
+            {
+                pragma.CommandText = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;";
+                pragma.ExecuteNonQuery();
+            }
+
+            bool hasTable, hasViewColumn = false;
+            using (var probe = c.CreateCommand())
+            {
+                probe.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='issues'";
+                hasTable = probe.ExecuteScalar() is not null;
+            }
+
+            if (hasTable)
+            {
+                using var cols = c.CreateCommand();
+                cols.CommandText = "PRAGMA table_info(issues)";
+                using var r = cols.ExecuteReader();
+                while (r.Read())
+                    if (r.GetString(1) == "view") hasViewColumn = true;
+            }
+
+            if (hasTable && !hasViewColumn)
+            {
+                MigrateFromV1(c);
+                return;
+            }
+
             using var cmd = c.CreateCommand();
-            cmd.CommandText = """
-                PRAGMA journal_mode = WAL;
-                PRAGMA synchronous = NORMAL;
-
-                CREATE TABLE IF NOT EXISTS issues (
-                    hash            TEXT PRIMARY KEY,
-                    severity        INTEGER NOT NULL,
-                    title           TEXT NOT NULL,
-                    signature       TEXT NOT NULL,
-                    exception_type  TEXT,
-                    faulting_method TEXT,
-                    logger          TEXT,
-                    sample_line     TEXT NOT NULL,
-                    sample_detail   TEXT,
-                    count           INTEGER NOT NULL DEFAULT 0,
-                    first_seen_utc  TEXT NOT NULL,
-                    last_seen_utc   TEXT NOT NULL,
-                    views           TEXT NOT NULL DEFAULT '',
-                    sources         TEXT NOT NULL DEFAULT '',
-                    jira_key        TEXT,
-                    notes           TEXT,
-                    ignored         INTEGER NOT NULL DEFAULT 0
-                );
-
-                CREATE INDEX IF NOT EXISTS ix_issues_severity ON issues(severity, last_seen_utc DESC);
-                CREATE INDEX IF NOT EXISTS ix_issues_count    ON issues(count DESC);
-                """;
+            cmd.CommandText = CreateTableSql("issues");
             cmd.ExecuteNonQuery();
         }
+    }
+
+    private static string CreateTableSql(string name) => $"""
+        CREATE TABLE IF NOT EXISTS {name} (
+            hash            TEXT NOT NULL,
+            view            TEXT NOT NULL DEFAULT '',
+            severity        INTEGER NOT NULL,
+            title           TEXT NOT NULL,
+            signature       TEXT NOT NULL,
+            exception_type  TEXT,
+            faulting_method TEXT,
+            logger          TEXT,
+            sample_line     TEXT NOT NULL,
+            sample_detail   TEXT,
+            count           INTEGER NOT NULL DEFAULT 0,
+            first_seen_utc  TEXT NOT NULL,
+            last_seen_utc   TEXT NOT NULL,
+            sources         TEXT NOT NULL DEFAULT '',
+            jira_key        TEXT,
+            notes           TEXT,
+            ignored         INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (hash, view)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_issues_view_sev ON {name}(view, severity, last_seen_utc DESC);
+        CREATE INDEX IF NOT EXISTS ix_issues_count    ON {name}(count DESC);
+        """;
+
+    /// <summary>
+    /// v1 (≤1.3) keyed on hash alone and accumulated view names into a 'views'
+    /// column. Each old row carries over with that string as its view — a row that
+    /// had genuinely mixed views keeps its combined label (e.g. "Prod,Test") and its
+    /// history, while everything recorded from now on lands in per-view rows.
+    /// </summary>
+    private static void MigrateFromV1(SqliteConnection c)
+    {
+        using var tx = c.BeginTransaction();
+        using var cmd = c.CreateCommand();
+        cmd.Transaction = tx;
+
+        // Drop v1's indexes FIRST. SQLite index names are schema-wide, so with the
+        // old ix_issues_count still present, the CREATE INDEX IF NOT EXISTS in the
+        // v2 DDL is silently skipped — and the DROP TABLE below then deletes the old
+        // index, leaving the migrated database without a count index at all.
+        cmd.CommandText = """
+            DROP INDEX IF EXISTS ix_issues_severity;
+            DROP INDEX IF EXISTS ix_issues_count;
+
+            """ + CreateTableSql("issues_v2") + """
+
+            INSERT INTO issues_v2
+                (hash, view, severity, title, signature, exception_type, faulting_method,
+                 logger, sample_line, sample_detail, count, first_seen_utc, last_seen_utc,
+                 sources, jira_key, notes, ignored)
+            SELECT hash, COALESCE(views, ''), severity, title, signature, exception_type,
+                   faulting_method, logger, sample_line, sample_detail, count,
+                   first_seen_utc, last_seen_utc, COALESCE(sources, ''), jira_key, notes, ignored
+            FROM issues;
+
+            DROP TABLE issues;
+            ALTER TABLE issues_v2 RENAME TO issues;
+            """;
+        cmd.ExecuteNonQuery();
+        tx.Commit();
     }
 
     /// <summary>Upserts a batch of sightings in one transaction.</summary>
@@ -142,25 +223,24 @@ public sealed class IssueStore : IDisposable
             cmd.Transaction = tx;
             cmd.CommandText = """
                 INSERT INTO issues
-                    (hash, severity, title, signature, exception_type, faulting_method, logger,
-                     sample_line, sample_detail, count, first_seen_utc, last_seen_utc, views, sources)
+                    (hash, view, severity, title, signature, exception_type, faulting_method, logger,
+                     sample_line, sample_detail, count, first_seen_utc, last_seen_utc, sources)
                 VALUES
-                    ($hash, $severity, $title, $signature, $exType, $method, $logger,
-                     $sample, $detail, 1, $when, $when, $view, $source)
-                ON CONFLICT(hash) DO UPDATE SET
+                    ($hash, $view, $severity, $title, $signature, $exType, $method, $logger,
+                     $sample, $detail, 1, $when, $when, $source)
+                ON CONFLICT(hash, view) DO UPDATE SET
                     count         = count + 1,
                     last_seen_utc = excluded.last_seen_utc,
                     -- Keep the richest sample: one that carries a stack trace beats one that doesn't.
                     sample_line   = CASE WHEN issues.sample_detail IS NULL AND excluded.sample_detail IS NOT NULL
                                          THEN excluded.sample_line ELSE issues.sample_line END,
                     sample_detail = COALESCE(issues.sample_detail, excluded.sample_detail),
-                    views         = CASE WHEN instr(',' || issues.views   || ',', ',' || excluded.views   || ',') > 0
-                                         THEN issues.views   ELSE issues.views   || ',' || excluded.views   END,
                     sources       = CASE WHEN instr(',' || issues.sources || ',', ',' || excluded.sources || ',') > 0
                                          THEN issues.sources ELSE issues.sources || ',' || excluded.sources END;
                 """;
 
             var pHash = cmd.Parameters.Add("$hash", SqliteType.Text);
+            var pView = cmd.Parameters.Add("$view", SqliteType.Text);
             var pSev = cmd.Parameters.Add("$severity", SqliteType.Integer);
             var pTitle = cmd.Parameters.Add("$title", SqliteType.Text);
             var pSig = cmd.Parameters.Add("$signature", SqliteType.Text);
@@ -170,12 +250,12 @@ public sealed class IssueStore : IDisposable
             var pSample = cmd.Parameters.Add("$sample", SqliteType.Text);
             var pDetail = cmd.Parameters.Add("$detail", SqliteType.Text);
             var pWhen = cmd.Parameters.Add("$when", SqliteType.Text);
-            var pView = cmd.Parameters.Add("$view", SqliteType.Text);
             var pSource = cmd.Parameters.Add("$source", SqliteType.Text);
 
             foreach (var o in batch)
             {
                 pHash.Value = o.Fingerprint.Hash;
+                pView.Value = Clean(o.View);
                 pSev.Value = (int)o.Severity;
                 pTitle.Value = o.Fingerprint.Title;
                 pSig.Value = o.Fingerprint.Signature;
@@ -185,7 +265,6 @@ public sealed class IssueStore : IDisposable
                 pSample.Value = o.Line;
                 pDetail.Value = (object?)o.Detail ?? DBNull.Value;
                 pWhen.Value = o.WhenUtc.ToString("O");
-                pView.Value = Clean(o.View);
                 pSource.Value = Clean(o.Source);
                 cmd.ExecuteNonQuery();
             }
@@ -197,8 +276,25 @@ public sealed class IssueStore : IDisposable
     /// <summary>Commas are the list separator, so they cannot appear inside a value.</summary>
     private static string Clean(string s) => (s ?? "").Replace(',', ' ').Trim();
 
-    public List<LogIssue> Query(Severity? severity = null, bool includeIgnored = false,
-                                bool includeFiled = true, string? search = null, int limit = 2000)
+    /// <summary>Every view name that has recorded at least one issue.</summary>
+    public List<string> DistinctViews()
+    {
+        lock (_gate)
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT DISTINCT view FROM issues ORDER BY view";
+
+            var list = new List<string>();
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) list.Add(r.GetString(0));
+            return list;
+        }
+    }
+
+    public List<LogIssue> Query(Severity? severity = null, string? view = null,
+                                bool includeIgnored = false, bool includeFiled = true,
+                                string? search = null, int limit = 2000)
     {
         lock (_gate)
         {
@@ -207,13 +303,14 @@ public sealed class IssueStore : IDisposable
 
             var where = new List<string>();
             if (severity is not null) where.Add("severity = $sev");
+            if (view is not null) where.Add("view = $view");
             if (!includeIgnored) where.Add("ignored = 0");
             if (!includeFiled) where.Add("(jira_key IS NULL OR jira_key = '')");
             if (!string.IsNullOrWhiteSpace(search)) where.Add("(title LIKE $q OR signature LIKE $q OR sample_line LIKE $q)");
 
             cmd.CommandText =
-                "SELECT hash, severity, title, signature, exception_type, faulting_method, logger, " +
-                "       sample_line, sample_detail, count, first_seen_utc, last_seen_utc, views, sources, " +
+                "SELECT hash, view, severity, title, signature, exception_type, faulting_method, logger, " +
+                "       sample_line, sample_detail, count, first_seen_utc, last_seen_utc, sources, " +
                 "       jira_key, notes, ignored " +
                 "FROM issues " +
                 (where.Count > 0 ? "WHERE " + string.Join(" AND ", where) + " " : "") +
@@ -221,6 +318,7 @@ public sealed class IssueStore : IDisposable
                 "LIMIT $limit";
 
             if (severity is not null) cmd.Parameters.AddWithValue("$sev", (int)severity);
+            if (view is not null) cmd.Parameters.AddWithValue("$view", view);
             if (!string.IsNullOrWhiteSpace(search)) cmd.Parameters.AddWithValue("$q", "%" + search.Trim() + "%");
             cmd.Parameters.AddWithValue("$limit", limit);
 
@@ -234,49 +332,51 @@ public sealed class IssueStore : IDisposable
     private static LogIssue ReadIssue(SqliteDataReader r) => new()
     {
         Hash = r.GetString(0),
-        Severity = (Severity)r.GetInt32(1),
-        Title = r.GetString(2),
-        Signature = r.GetString(3),
-        ExceptionType = r.IsDBNull(4) ? null : r.GetString(4),
-        FaultingMethod = r.IsDBNull(5) ? null : r.GetString(5),
-        Logger = r.IsDBNull(6) ? null : r.GetString(6),
-        SampleLine = r.GetString(7),
-        SampleDetail = r.IsDBNull(8) ? null : r.GetString(8),
-        Count = r.GetInt64(9),
-        FirstSeenUtc = DateTime.Parse(r.GetString(10), null, System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime(),
-        LastSeenUtc = DateTime.Parse(r.GetString(11), null, System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime(),
-        Views = r.GetString(12),
+        View = r.GetString(1),
+        Severity = (Severity)r.GetInt32(2),
+        Title = r.GetString(3),
+        Signature = r.GetString(4),
+        ExceptionType = r.IsDBNull(5) ? null : r.GetString(5),
+        FaultingMethod = r.IsDBNull(6) ? null : r.GetString(6),
+        Logger = r.IsDBNull(7) ? null : r.GetString(7),
+        SampleLine = r.GetString(8),
+        SampleDetail = r.IsDBNull(9) ? null : r.GetString(9),
+        Count = r.GetInt64(10),
+        FirstSeenUtc = DateTime.Parse(r.GetString(11), null, System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime(),
+        LastSeenUtc = DateTime.Parse(r.GetString(12), null, System.Globalization.DateTimeStyles.RoundtripKind).ToUniversalTime(),
         Sources = r.GetString(13),
         JiraKey = r.IsDBNull(14) ? null : r.GetString(14),
         Notes = r.IsDBNull(15) ? null : r.GetString(15),
         Ignored = r.GetInt32(16) != 0,
     };
 
-    public void SetJiraKey(string hash, string? key) => Update(hash, "jira_key", (object?)key ?? DBNull.Value);
-    public void SetNotes(string hash, string? notes) => Update(hash, "notes", (object?)notes ?? DBNull.Value);
-    public void SetIgnored(string hash, bool ignored) => Update(hash, "ignored", ignored ? 1 : 0);
+    public void SetJiraKey(string hash, string view, string? key) => Update(hash, view, "jira_key", (object?)key ?? DBNull.Value);
+    public void SetNotes(string hash, string view, string? notes) => Update(hash, view, "notes", (object?)notes ?? DBNull.Value);
+    public void SetIgnored(string hash, string view, bool ignored) => Update(hash, view, "ignored", ignored ? 1 : 0);
 
-    private void Update(string hash, string column, object value)
+    private void Update(string hash, string view, string column, object value)
     {
         lock (_gate)
         {
             using var c = Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = $"UPDATE issues SET {column} = $v WHERE hash = $h";
+            cmd.CommandText = $"UPDATE issues SET {column} = $v WHERE hash = $h AND view = $view";
             cmd.Parameters.AddWithValue("$v", value);
             cmd.Parameters.AddWithValue("$h", hash);
+            cmd.Parameters.AddWithValue("$view", view);
             cmd.ExecuteNonQuery();
         }
     }
 
-    public void Delete(string hash)
+    public void Delete(string hash, string view)
     {
         lock (_gate)
         {
             using var c = Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "DELETE FROM issues WHERE hash = $h";
+            cmd.CommandText = "DELETE FROM issues WHERE hash = $h AND view = $view";
             cmd.Parameters.AddWithValue("$h", hash);
+            cmd.Parameters.AddWithValue("$view", view);
             cmd.ExecuteNonQuery();
         }
     }
@@ -292,16 +392,21 @@ public sealed class IssueStore : IDisposable
         }
     }
 
-    /// <summary>Distinct-issue counts per severity, for the window's header.</summary>
-    public Dictionary<Severity, int> CountsBySeverity(bool includeIgnored = false)
+    /// <summary>Distinct-issue counts per severity, optionally within one view.</summary>
+    public Dictionary<Severity, int> CountsBySeverity(bool includeIgnored = false, string? view = null)
     {
         lock (_gate)
         {
             using var c = Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "SELECT severity, COUNT(*) FROM issues " +
-                              (includeIgnored ? "" : "WHERE ignored = 0 ") +
-                              "GROUP BY severity";
+
+            var where = new List<string>();
+            if (!includeIgnored) where.Add("ignored = 0");
+            if (view is not null) { where.Add("view = $view"); cmd.Parameters.AddWithValue("$view", view); }
+
+            cmd.CommandText = "SELECT severity, COUNT(*) FROM issues "
+                              + (where.Count > 0 ? "WHERE " + string.Join(" AND ", where) + " " : "")
+                              + "GROUP BY severity";
 
             var result = new Dictionary<Severity, int>();
             using var r = cmd.ExecuteReader();
