@@ -58,7 +58,13 @@ public sealed class IssueRecorder : IDisposable
             {
                 var next = lines[j];
                 if (next.Severity != Severity.None) break;
-                if (!SignatureBuilder.IsContinuation(next.Text)) break;
+
+                // Either signal marks continuation detail: the shape of the text
+                // (stack frame, exception header) or the tab's timestamp-based
+                // flag — which is what captures free-form spill like
+                // "STDOUT: ****Fatal error received…" so the stack frames after
+                // it aren't orphaned from their issue.
+                if (!next.IsContinuation && !SignatureBuilder.IsContinuation(next.Text)) break;
 
                 detailLines.Add(next.Text);
                 detail.AppendLine(next.Text);
