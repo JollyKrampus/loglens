@@ -85,8 +85,13 @@ public static class WorkspaceStore
             // let a message mentioning "Fatal" outrank the line's real |Error| level
             // field. If the rules are still EXACTLY those defaults — untouched in every
             // field — swap in the current two-tier defaults. Any edit, reorder, recolour
-            // or disable means the user owns the list and it is left alone.
-            if (IsUntouchedLegacyDefaults(ws.Rules)) ws.Rules = HighlightRule.Defaults();
+            // or disable means the user owns the list and it is left alone. The version
+            // gate makes this one-time: without it, a 1.5.1 user deleting the six
+            // "(level field)" rules would leave a list content-identical to the old
+            // defaults and get them resurrected on every load.
+            if (ws.Version < Workspace.CurrentVersion && IsUntouchedLegacyDefaults(ws.Rules))
+                ws.Rules = HighlightRule.Defaults();
+            ws.Version = Workspace.CurrentVersion;
 
             ws.Views ??= [];
             if (ws.Views.Count == 0) ws.Views.Add(new ViewDef { Name = "Default" });

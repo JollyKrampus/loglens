@@ -100,6 +100,14 @@ internal static class Program
         Expect(generic, "2026-08-18 07:12:45.0001|Debug|Acme.Orders|FATAL flag parsed from config",
             Severity.Debug, "|Debug| line mentioning 'FATAL' stays Debug");
 
+        // The field tier's vocabulary must cover everything the keyword tier calls a
+        // level, or those layouts fall through and message keywords win again.
+        Expect(generic, "2026-08-18 07:12:44.1230|ERR|Acme.Gateway.Listener|****Fatal error received from gateway",
+            Severity.Error, "a short |ERR| level field also beats message keywords");
+
+        Expect(generic, "2026-08-18 07:12:45.0001|Information|Acme.Jobs|Recovered from a transient error",
+            Severity.Info, "an |Information| level field also beats message keywords");
+
         // ---- generic preset on space-delimited logs ----------------------------
 
         Section("Generic keyword preset");
@@ -969,6 +977,7 @@ internal static class Program
             // A workspace still carrying the untouched pre-1.5.1 defaults, written by
             // the real serialiser, must come back with the two-tier defaults.
             var old = Workspace.CreateDefault();
+            old.Version = 1;                    // as every pre-1.5.1 release wrote it
             old.Rules = Pre151DefaultRules();
             WorkspaceStore.Save(old, path);
 
@@ -977,9 +986,10 @@ internal static class Program
 
             Report(upgraded.Rules.Count == fresh.Count
                    && upgraded.Rules[0].Name == fresh[0].Name
-                   && upgraded.Rules[0].Pattern == fresh[0].Pattern,
+                   && upgraded.Rules[0].Pattern == fresh[0].Pattern
+                   && upgraded.Version == Workspace.CurrentVersion,
                 "untouched pre-1.5.1 defaults are upgraded to the two-tier defaults",
-                $"count={upgraded.Rules.Count} first={upgraded.Rules[0].Name}");
+                $"count={upgraded.Rules.Count} first={upgraded.Rules[0].Name} version={upgraded.Version}");
 
             var set = new RuleSet([], upgraded.Rules);
             var match = set.Match("2026-08-18 07:12:44.1230|Error|Acme.Gateway|****Fatal error received from gateway");
@@ -989,6 +999,7 @@ internal static class Program
 
             // One recoloured rule = the user owns the list; nothing changes.
             var custom = Workspace.CreateDefault();
+            custom.Version = 1;
             custom.Rules = Pre151DefaultRules();
             custom.Rules[1].Foreground = "#FF0000";
             WorkspaceStore.Save(custom, path);
@@ -1000,6 +1011,7 @@ internal static class Program
 
             // Same for a disabled rule — that is a deliberate choice, not staleness.
             var muted = Workspace.CreateDefault();
+            muted.Version = 1;
             muted.Rules = Pre151DefaultRules();
             muted.Rules[4].Enabled = false;
             WorkspaceStore.Save(muted, path);
@@ -1008,6 +1020,20 @@ internal static class Program
             Report(keptMuted.Rules.Count == 7 && !keptMuted.Rules[4].Enabled,
                 "a rule set with a disabled rule is left alone too",
                 $"count={keptMuted.Rules.Count}");
+
+            // The trap the version gate exists for: a 1.5.1 user deletes the six
+            // "(level field)" rules, leaving a list content-identical to the legacy
+            // defaults. Their workspace is already CurrentVersion, so the upgrade
+            // must NOT run and the deletion must stick across loads.
+            var trimmed = Workspace.CreateDefault();
+            trimmed.Rules = trimmed.Rules.Where(r => !r.Name.Contains("(level field)")).ToList();
+            WorkspaceStore.Save(trimmed, path);
+
+            var stillTrimmed = WorkspaceStore.Load(path);
+            Report(stillTrimmed.Rules.Count == 7
+                   && stillTrimmed.Rules.All(r => !r.Name.Contains("(level field)")),
+                "deleting the level-field rules on 1.5.1 sticks — no resurrection",
+                $"count={stillTrimmed.Rules.Count}");
 
             // The current defaults must round-trip untouched (no repeat upgrades).
             var current = Workspace.CreateDefault();

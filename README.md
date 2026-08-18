@@ -366,8 +366,10 @@ pipe-delimited field**:
 so a `|Error|` line whose message screams "Fatal error received" still counts as
 an error, and the message text can say whatever it likes. The keyword tier below
 it catches formats with no pipe fields. That shape also means it doesn't care
-whether the level is the second column or the fifth — reordering your NLog
-layout won't break it.
+whether the level is the second column or the fifth — with one caveat: the level
+must not be the *last* column, because a trailing `|Error` can't be told apart
+from a message that happens to end in that word. Those layouts fall back to
+keyword matching.
 
 Workspaces that still carry the untouched pre-1.5.1 defaults are upgraded to the
 two-tier set automatically on load; a rule list you've edited in any way is left
