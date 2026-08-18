@@ -160,12 +160,33 @@ public partial class MainWindow : Window
             // same dialog a manual Help ▸ Check for updates would — with its Later
             // button, so it is one click to dismiss. FAILURES stay quiet: being
             // offline at startup is not something to alert about.
-            var dlg = new UpdateWindow(update) { Owner = this };
-            dlg.ShowDialog();
+            ShowUpdateDialog(update);
         }
         catch
         {
             // Offline, rate-limited, GitHub down: a quiet check stays quiet.
+        }
+    }
+
+    private bool _updateDialogOpen;
+
+    /// <summary>
+    /// Single doorway for the update dialog: on a slow connection the startup
+    /// check can finish while the user is ALSO running a manual check, and
+    /// without this guard they would get two stacked copies of the same dialog.
+    /// </summary>
+    private void ShowUpdateDialog(UpdateInfo update)
+    {
+        if (_updateDialogOpen) return;
+        _updateDialogOpen = true;
+        try
+        {
+            var dlg = new UpdateWindow(update) { Owner = this };
+            dlg.ShowDialog();
+        }
+        finally
+        {
+            _updateDialogOpen = false;
         }
     }
 
@@ -186,8 +207,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var dlg = new UpdateWindow(update) { Owner = this };
-            dlg.ShowDialog();
+            ShowUpdateDialog(update);
         }
         catch (Exception ex)
         {

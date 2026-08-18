@@ -174,11 +174,12 @@ public sealed class TimestampExtractor
     public bool HasSettledFormat => _detected && _format is not null;
 
     /// <summary>
-    /// Feeds a line into detection WITHOUT reading a timestamp. The tab calls
-    /// this for a whole batch before classifying it, so that on a large initial
-    /// read detection settles before the first line is classified — otherwise
-    /// the head of the buffer is classified under warm-up rules and never
-    /// corrected. Cheap and idempotent once detection has settled.
+    /// Feeds a line into detection — the ONLY thing that does, so each line is
+    /// sampled exactly once. The tab calls this for a whole batch before
+    /// classifying it, so that on a large initial read detection settles before
+    /// the first line is classified — otherwise the head of the buffer is
+    /// classified under warm-up rules and never corrected. Cheap and idempotent
+    /// once detection has settled.
     /// </summary>
     public void ObserveForDetection(string line)
     {
@@ -213,21 +214,13 @@ public sealed class TimestampExtractor
 
     /// <summary>
     /// Returns the line's timestamp, or null if the line has none (a stack frame,
-    /// say). Detection happens on the first few hundred lines and then sticks.
+    /// say). Deliberately does NOT feed detection: the tab pre-observes every
+    /// batch via <see cref="ObserveForDetection"/> before reading it, and sampling
+    /// here as well counted head-of-batch lines twice — enough duplicate hits to
+    /// flip the verdict and call a keyword-only file timestamped.
     /// </summary>
     public DateTime? Read(string line)
     {
-        if (!_detected)
-        {
-            _sample.Add(line);
-            if (_sample.Count >= 120)
-            {
-                _format = TimestampParser.Detect(_sample);
-                _detected = true;
-                _sample.Clear();
-            }
-        }
-
         // Detection needs a sample, but the very first lines of a file still need
         // timestamps — otherwise they sort to the front of the merged timeline
         // regardless of when they actually happened. Until detection settles, use
