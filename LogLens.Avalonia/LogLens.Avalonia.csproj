@@ -8,8 +8,8 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>LogLens.Avalonia</RootNamespace>
     <AssemblyName>LogLens.Avalonia</AssemblyName>
-    <Version>1.5.2</Version>
-    <InformationalVersion>1.5.2</InformationalVersion>
+    <Version>1.5.3</Version>
+    <InformationalVersion>1.5.3</InformationalVersion>
     <!-- Reflection bindings, same style as the WPF app's XAML. -->
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>

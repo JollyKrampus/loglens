@@ -373,8 +373,17 @@ must not be the *last* column, because a trailing `|Error` can't be told apart
 from a message that happens to end in that word. Those layouts fall back to
 keyword matching.
 
-Workspaces that still carry the untouched pre-1.5.1 defaults are upgraded to the
-two-tier set automatically on load; a rule list you've edited in any way is left
+Multi-line events get the same protection from the other direction: in a file
+whose lines carry timestamps, a line *without* one (a stack frame, captured
+STDOUT, any spill-over) is a **continuation** of the event above it, and loose
+severity keywords inside it don't count — `STDOUT: ****Fatal error received…`
+under an `|ERROR|` entry is detail of that error, not a fresh fatal. Anchored
+level-field rules and pure-highlight rules (stack frames) still apply to
+continuations, and files with no detectable timestamps keep full keyword
+matching everywhere.
+
+Workspaces that still carry untouched defaults from an older release are
+upgraded automatically on load; a rule list you've edited in any way is left
 exactly as it is (load the preset yourself if you want the new behaviour). The
 dedicated NLog preset is still the tightest choice for pipe layouts — it skips
 the keyword fallback entirely and adds exception-continuation colouring.

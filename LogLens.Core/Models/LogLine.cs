@@ -13,7 +13,7 @@ public sealed class LogLine
     public LogLine(long number, string text, HighlightRule? rule,
                    DateTime? timestamp = null, string? sourceName = null,
                    int sourceIndex = 0, string? sourceColor = null,
-                   long? sourceLineNumber = null)
+                   long? sourceLineNumber = null, bool isContinuation = false)
     {
         Number = number;
         Text = text;
@@ -23,7 +23,16 @@ public sealed class LogLine
         SourceIndex = sourceIndex;
         SourceColor = sourceColor;
         SourceLineNumber = sourceLineNumber ?? number;
+        IsContinuation = isContinuation;
     }
+
+    /// <summary>
+    /// True when this line had no timestamp of its own in a file whose lines carry
+    /// them — spill-over detail of the event above (stack trace, captured STDOUT).
+    /// Rule re-resolution must keep honouring this, or a rules/filter change would
+    /// let a loose severity keyword in the spill re-promote the line.
+    /// </summary>
+    public bool IsContinuation { get; }
 
     public long Number { get; }
     public string Text { get; }
@@ -60,7 +69,7 @@ public sealed class LogLine
 
     /// <summary>Copy carrying a freshly resolved rule, used when highlighting changes.</summary>
     public LogLine WithRule(HighlightRule? rule)
-        => new(Number, Text, rule, Timestamp, SourceName, SourceIndex, SourceColor, SourceLineNumber);
+        => new(Number, Text, rule, Timestamp, SourceName, SourceIndex, SourceColor, SourceLineNumber, IsContinuation);
 
     public override string ToString() => Text;
 }
