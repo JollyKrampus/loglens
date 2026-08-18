@@ -134,6 +134,8 @@ the path in use.
 | **Pause** | Holds incoming lines without dropping them. Unpause and they all appear. |
 | **Clear** | Empties the on-screen buffer. Your log file is never written to. |
 | **Show / Hide** | Live include/exclude filters. `.*` treats them as regex, `Aa` makes them case-sensitive. |
+| **F / E / W / I / D chips** | Severity filter — any combination at once, so "errors, warnings and fatals only" is three clicks. Stack traces and other unclassified lines follow the line they belong to, so filtering to errors keeps each error's trace attached. All chips on = show everything. |
+| **Editor** | Opens the tab's log file in your default editor (Notepad if nothing is associated with `.log`). Also on the right-click menu, along with "Show in File Explorer". A wildcard tab opens whichever file it is tailing right now. |
 | **Find** | `Ctrl+F`. Enter for next, Shift+Enter for previous, with a match count. |
 
 Drag log files onto the window to add them to the current view.
@@ -484,11 +486,16 @@ file live while you reproduce something.
 
 ---
 
-## Regenerating the icon
+## Regenerating the icon and splash
 
 ```powershell
 .\tools\New-AppIcon.ps1
+.\tools\New-SplashImage.ps1
 ```
+
+The splash (`LogLens\Assets\splash.png`) shows almost immediately on launch and fades
+when the main window paints — it covers the single-file extraction and JIT pause that
+otherwise looks like the app ignoring the double-click.
 
 Redraws `LogLens\app.ico` at 16/20/24/32/48/64/128/256 px and writes a preview
 sheet to `docs\app-icon-preview.png` that includes 6x nearest-neighbour blow-ups
