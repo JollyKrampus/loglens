@@ -8,8 +8,11 @@ on:
     branches: [main]
   workflow_dispatch:        # lets you kick off a build (and get binaries) by hand
 
+# Read-only by default, so the build jobs - which run on every pull request,
+# including one opened from a fork of this public repo - hold a token that can do
+# nothing but fetch the code. Only the release job is granted write, below.
 permissions:
-  contents: write           # needed only to create the release and attach files
+  contents: read
 
 jobs:
   build-windows:
@@ -135,6 +138,11 @@ jobs:
     needs: [build-windows, build-macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+
+    # The one job that needs to write: creating the release and attaching files.
+    # Tags only, so it never runs for a pull request.
+    permissions:
+      contents: write
 
     steps:
       - name: Download builds
