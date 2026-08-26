@@ -85,3 +85,26 @@ Avalonia.
   Windows-specific by nature.
 - Windows remains the flagship: WPF ships as the `LogLens.exe` everyone uses;
   the Avalonia app is the macOS (and future Linux) vehicle.
+
+## Update — 1.5.3: macOS ships a bundle after all
+
+Reason 3 argued for a bare Mach-O executable per architecture, on the grounds that it
+is the exact analogue of the Windows exe and that unsigned distribution is more awkward
+for a bundle than for a single file. That last part turned out to be the wrong worry.
+
+A bare executable cannot carry a Finder icon or a Dock name — only a `.app` bundle can
+— so since 1.5.3 the macOS build assembles one: `Info.plist` with the version injected
+from the tag, the published binary as `Contents/MacOS/LogLens`, and an `.icns` rendered
+from the same artwork as `app.ico`.
+
+**The decision is unchanged.** The bundle wraps exactly the
+`--self-contained -p:PublishSingleFile=true` output this ADR describes; the app is still
+one self-contained thing with nothing to install, and Gatekeeper is still cleared with a
+single `xattr -cr`. What was wrong was the implicit assumption that a bundle drags in
+Catalyst-style packaging machinery. It does not — a bundle is a directory layout, and
+assembling one by hand is about ten lines of the build job.
+
+One consequence worth recording: a bundle is **not** a portable install.
+`WorkspaceStore` explicitly refuses to treat `Contents/MacOS` as the portable location
+— writing there would hide the workspace inside the bundle and invalidate its signature
+the day releases are signed — and uses `~/.config/LogLens` instead.

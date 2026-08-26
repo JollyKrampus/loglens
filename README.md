@@ -62,8 +62,12 @@ Silencing the warning properly needs Authenticode code signing. The only cheap r
 is [Azure Artifact Signing](https://azure.microsoft.com/en-us/pricing/details/trusted-signing/)
 (formerly Trusted Signing) at about $10/month, which has an official GitHub Action and
 would slot into the release job. A traditional OV certificate runs $200–600/year and,
-since June 2023, requires the key on FIPS 140-2 Level 2 hardware. Neither is worth it
-while this is a private repo with one user; revisit if it ever goes public.
+since June 2023, requires the key on FIPS 140-2 Level 2 hardware.
+
+That was an easy no while this was a private repo with one user. The repo is public
+now, so it is a live question rather than a settled one: anyone who finds a release
+meets SmartScreen with nothing vouching for the file. Nothing has been decided either
+way — until it is, the published checksum is the honest answer.
 
 ### Cutting a new one
 
@@ -71,30 +75,41 @@ while this is a private repo with one user; revisit if it ever goes public.
 git tag -a v1.2.0 -m "what changed" && git push origin v1.2.0
 ```
 
-That's it. CI builds it, runs the checks, and publishes a release with the exe
-attached and generated notes. Bump `<Version>` in `LogLens/LogLens.csproj` to match
-before tagging — the About box reads it from the assembly.
+That's it. CI builds it, runs the checks, and publishes a release with the Windows exe,
+both macOS tarballs and their checksums attached, plus generated notes.
+
+Before tagging, bump `<Version>` to match in **all three** project files — `LogLens`,
+`LogLens.Core` and `LogLens.Avalonia` are kept in lockstep. `LogLens.csproj` is the one
+that matters most: the About box and the update check both read it from the assembly.
 
 ### What CI does, and why it's shaped that way
 
-Every push and pull request builds with warnings-as-errors and runs
-`tests/RuleCheck`. Only **tags and manual runs** produce the portable exe.
+Every push to `main` and every pull request runs **build-windows** — the other two
+jobs skip. It restores, builds the WPF app with warnings-as-errors, builds the Avalonia
+app, then runs `tests/RuleCheck`. Nothing is published and no artifact is uploaded. A
+run is about two minutes.
 
-It is a **single job**, on purpose. Artifacts exist to carry files between jobs,
-because each job starts on a clean machine. Publishing the release from the same job
-that built it means the exe is already on disk — so a tagged release involves **no
-artifact at all**, and touches no storage quota.
+**Tags and manual runs** do more. `build-windows` additionally publishes the portable
+exe and its `SHA256SUMS.txt`; **build-macos** runs on a macOS runner and produces the
+two `LogLens.app` tarballs and their checksums. Each uploads its output as an artifact
+with 1-day retention. On a tag a third job, **release**, downloads both and creates the
+GitHub release with all four files attached.
 
-The rest of the shape is about staying inside a free GitHub account:
+Artifacts are used only because they have to be. Every job starts on a clean machine,
+and the release job needs the output of two *different* runners — one Windows, one
+macOS — in the same place. That is the case artifacts exist for, and the 1-day
+retention says what they are: a hand-off inside one run, not a deliverable. The
+binaries themselves live as release assets.
 
-- Windows runners are required (WPF will not build on Linux) and bill at **2× minutes**
-  against the free 2,000/month. A run is ~2 minutes, so ~4 billed — roughly 500
-  pushes a month. Not a constraint.
-- **Artifact storage is the thing with a hard cap**: 500 MB, shared across every
-  private repo on the account. Release assets are a separate pool with no total size
-  limit, which is why tagged binaries live there.
-- Only a **manual** run uploads an artifact, with 1-day retention, purely so you can
-  grab a build without cutting a release.
+What forces the shape:
+
+- **Windows runners are unavoidable.** WPF will not build on Linux, and neither will
+  `tests/RuleCheck` — it exercises the Windows-only alert and sound code.
+- **The Mac build needs a real macOS runner**, so executable bits and tar metadata
+  come out right.
+
+This repo is public, where GitHub Actions costs nothing, so the runner-minute
+arithmetic that shaped earlier versions of this workflow no longer applies.
 
 Need a one-off binary without tagging? Actions tab → **build** → *Run workflow*.
 
