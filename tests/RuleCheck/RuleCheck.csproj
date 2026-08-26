@@ -5,7 +5,13 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <!-- HighlightRule builds WPF brushes, so this needs the WPF surface too. -->
+    <!--
+      The checks exercise AlertService (tray balloon, taskbar flash, throttling) and
+      SoundLibrary, which are Windows-only and live in the WPF app — hence the project
+      reference below and the matching WPF/WinForms surface here. HighlightRule, which
+      an earlier version of this comment blamed, lives in LogLens.Core and carries hex
+      strings rather than brushes; it needs neither.
+    -->
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>RuleCheck</RootNamespace>

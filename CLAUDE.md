@@ -407,22 +407,19 @@ Observed convention in this repo's history:
 
 ---
 
-## Known documentation drift
+## Keeping the docs honest
 
-Check the code before trusting these:
+`README.md` is the user manual and describes current behaviour. `docs/adr/` records
+decisions **as they were made** — it is a history, not a status page. When you change
+behaviour the README documents, update it in the same commit.
 
-- `README.md`'s *"What CI does, and why it's shaped that way"* section describes a
-  **single-job** workflow on a **private** repo. `build.yml` now has three jobs
-  (`build-windows`, `build-macos`, `release`), uses artifacts to get both platforms'
-  output into the release job, and its own comment says the repo is public.
-- `docs/adr/0001` argues (reason 3) for shipping a **bare Mach-O executable** rather
-  than a bundle. Since 1.5.3 the macOS build ships a `LogLens.app` bundle — a Finder
-  icon and Dock identity require one. The decision (Avalonia over MAUI) still stands;
-  that one supporting detail has been superseded.
-- `tests/RuleCheck/RuleCheck.csproj` comments that it needs WPF because
-  "HighlightRule builds WPF brushes". `HighlightRule` uses hex strings now; the real
-  reason for the project reference is that the checks exercise `AlertService` and
-  `SoundLibrary`, which are Windows-only and live in the WPF app.
+For an ADR, never rewrite an accepted decision to match new reality: append a dated
+update section instead, the way `docs/adr/0001` does for the 1.5.3 macOS bundle. The
+original argument is the record; what changed since goes underneath it, saying plainly
+whether the decision itself still stands.
 
-When you touch behaviour that `README.md` documents, update `README.md` in the same
-commit — it is the user manual, not an afterthought.
+Comments that explain a *reason* go stale silently when the reason moves, and this
+codebase leans on its comments harder than most. `tests/RuleCheck/RuleCheck.csproj`
+carried one blaming WPF brushes long after `HighlightRule` became hex strings in Core.
+If you find another, correct it rather than working around it — a comment that explains
+the wrong thing is worse than none, because it will be believed.
