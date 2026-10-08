@@ -1,0 +1,36 @@
+{
+    "version": "1.5.3",
+    "description": "Portable real-time log viewer: saved views, live filtering, a merged cross-file timeline and a local database of distinct errors.",
+    "homepage": "https://github.com/JollyKrampus/loglens",
+    "license": "MIT",
+    "notes": [
+        "From LogLens 1.5.4, a Scoop install keeps its workspace and issue database in %APPDATA%\\LogLens,",
+        "so 'scoop update loglens' keeps your views. 1.5.3 still writes them beside the exe, in this version's folder.",
+        "Update with 'scoop update loglens' rather than Help > Check for updates, so Scoop knows which version you have."
+    ],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/JollyKrampus/loglens/releases/download/v1.5.3/LogLens.exe",
+            "hash": "cd00c03208e9d486afa6adb778f0f1601301bd57d66f284cb8bd9bc4bafcf308"
+        }
+    },
+    "post_install": "New-Item -ItemType File -Force -Path \"$dir\\loglens.not-portable\" | Out-Null",
+    "bin": "LogLens.exe",
+    "shortcuts": [
+        [
+            "LogLens.exe",
+            "LogLens"
+        ]
+    ],
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/JollyKrampus/loglens/releases/download/v$version/LogLens.exe",
+                "hash": {
+                    "url": "$baseurl/SHA256SUMS.txt"
+                }
+            }
+        }
+    }
+}

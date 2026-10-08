@@ -47,27 +47,42 @@ public static class WorkspaceStore
     /// workspace there hides it from the user and would invalidate the bundle's
     /// signature the day releases are signed. A bundle is not a portable install.
     /// </summary>
-    private static bool IsInsideMacBundle =>
-        AppDirectory.Replace('\\', '/').Contains(".app/Contents/MacOS", StringComparison.OrdinalIgnoreCase);
+    private static bool IsMacBundle(string appDirectory) =>
+        appDirectory.Replace('\\', '/').Contains(".app/Contents/MacOS", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Dropped beside the exe by a package manager's install script (Scoop's
+    /// post_install). Scoop installs into a versioned folder that is writable — so
+    /// "beside the exe" passes the portable test — and then installs the next version
+    /// into a NEW folder, which would strand the workspace and issue history in the
+    /// old one on every update. Like a .app bundle, a managed install is not portable.
+    /// </summary>
+    public const string NotPortableMarker = "loglens.not-portable";
 
     /// <summary>Where the default workspace lives, preferring the portable location.</summary>
-    public static string DefaultPath
+    public static string DefaultPath => ResolveDefaultPath(AppDirectory, RoamingDirectory);
+
+    /// <summary>
+    /// <see cref="DefaultPath"/> with its two directories passed in, so the choice can
+    /// be checked without depending on where the test process happens to run.
+    /// </summary>
+    public static string ResolveDefaultPath(string appDirectory, string roamingDirectory)
     {
-        get
+        bool portableAllowed = !IsMacBundle(appDirectory)
+                               && !File.Exists(Path.Combine(appDirectory, NotPortableMarker));
+
+        if (portableAllowed)
         {
-            if (!IsInsideMacBundle)
-            {
-                var portable = Path.Combine(AppDirectory, FileName);
-                if (File.Exists(portable)) return portable;
-            }
-
-            var roaming = Path.Combine(RoamingDirectory, FileName);
-            if (File.Exists(roaming)) return roaming;
-
-            return !IsInsideMacBundle && IsWritable(AppDirectory)
-                ? Path.Combine(AppDirectory, FileName)
-                : roaming;
+            var portable = Path.Combine(appDirectory, FileName);
+            if (File.Exists(portable)) return portable;
         }
+
+        var roaming = Path.Combine(roamingDirectory, FileName);
+        if (File.Exists(roaming)) return roaming;
+
+        return portableAllowed && IsWritable(appDirectory)
+            ? Path.Combine(appDirectory, FileName)
+            : roaming;
     }
 
     private static bool IsWritable(string dir)

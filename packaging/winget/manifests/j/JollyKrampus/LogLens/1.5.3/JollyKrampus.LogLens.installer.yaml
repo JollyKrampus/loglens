@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: JollyKrampus.LogLens
+PackageVersion: 1.5.3
+InstallerType: portable
+Commands:
+- loglens
+ReleaseDate: 2026-08-18
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/JollyKrampus/loglens/releases/download/v1.5.3/LogLens.exe
+  InstallerSha256: CD00C03208E9D486AFA6ADB778F0F1601301BD57D66F284CB8BD9BC4BAFCF308
+ManifestType: installer
+ManifestVersion: 1.6.0
