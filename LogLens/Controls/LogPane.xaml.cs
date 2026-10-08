@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -16,8 +15,7 @@ public partial class LogPane : UserControl
     private ScrollViewer? _scroller;
     private LogPaneVm? _tab;
     private bool _scrollPending;
-    private List<int> _hits = new();
-    private string _hitsTerm = "";
+    private readonly LineFinder _finder = new();
 
     public LogPane()
     {
@@ -88,8 +86,7 @@ public partial class LogPane : UserControl
         if (_tab is not null) _tab.RequestScrollToEnd = null;
 
         _tab = DataContext as LogPaneVm;
-        _hits.Clear();
-        _hitsTerm = "";
+        _finder.Reset();
 
         if (_tab is null) return;
 
@@ -285,80 +282,31 @@ public partial class LogPane : UserControl
     private void FindNext_Click(object sender, RoutedEventArgs e) => FindStep(+1);
     private void FindPrev_Click(object sender, RoutedEventArgs e) => FindStep(-1);
 
-    private string HitKey =>
-        $"{FindBox.Text}{FindRegex.IsChecked == true}{FindCase.IsChecked == true}{_tab?.ShownLines}";
+    // The matching and stepping rules live in LogLens.Core (LineFinder), shared
+    // with the macOS app; this is only the find bar around them.
 
     private void RefreshHits()
     {
-        _hits = new List<int>();
-        _hitsTerm = HitKey;
-
-        var term = FindBox.Text;
-        if (_tab is null || string.IsNullOrEmpty(term))
-        {
-            FindStatus.Text = "";
-            return;
-        }
-
-        Regex? rx = null;
-        if (FindRegex.IsChecked == true)
-        {
-            try
-            {
-                var opts = RegexOptions.CultureInvariant;
-                if (FindCase.IsChecked != true) opts |= RegexOptions.IgnoreCase;
-                rx = new Regex(term, opts, TimeSpan.FromMilliseconds(100));
-            }
-            catch (Exception ex)
-            {
-                FindStatus.Text = ex.Message;
-                return;
-            }
-        }
-
-        var cmp = FindCase.IsChecked == true
-            ? StringComparison.Ordinal
-            : StringComparison.OrdinalIgnoreCase;
-
-        var items = _tab.Display;
-        for (int i = 0; i < items.Count; i++)
-        {
-            var text = items[i].Text;
-            bool hit = rx is not null ? rx.IsMatch(text) : text.Contains(term, cmp);
-            if (hit) _hits.Add(i);
-        }
-
-        FindStatus.Text = _hits.Count == 0 ? "no matches" : $"{_hits.Count:N0} matches";
+        _finder.Search(_tab?.Display, FindBox.Text,
+                       FindRegex.IsChecked == true, FindCase.IsChecked == true);
+        FindStatus.Text = _finder.Status;
     }
 
     private void FindStep(int direction)
     {
         if (_tab is null) return;
-        if (_hitsTerm != HitKey) RefreshHits();
-        if (_hits.Count == 0) return;
 
-        int current = Lines.SelectedIndex;
-        int target;
-
-        if (direction > 0)
-        {
-            target = _hits.FirstOrDefault(i => i > current, -1);
-            if (target < 0) target = _hits[0];              // wrap to the top
-        }
-        else
-        {
-            target = _hits.LastOrDefault(i => i < current, -1);
-            if (target < 0) target = _hits[^1];             // wrap to the bottom
-        }
+        int target = _finder.Step(_tab.Display, FindBox.Text,
+                                  FindRegex.IsChecked == true, FindCase.IsChecked == true,
+                                  Lines.SelectedIndex, direction);
+        FindStatus.Text = _finder.Status;
+        if (target < 0) return;
 
         // Jumping to a hit means you want to read it, not be dragged back to the tail.
         _tab.FollowTail = false;
 
         Lines.SelectedIndex = target;
         Lines.ScrollIntoView(Lines.SelectedItem);
-
-        int ordinal = _hits.IndexOf(target) + 1;
-        FindStatus.Text = $"{ordinal:N0} of {_hits.Count:N0}";
     }
 
     // ---- context menu ------------------------------------------------------------

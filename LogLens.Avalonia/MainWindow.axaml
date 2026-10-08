@@ -23,9 +23,36 @@
             <MenuItem Header="Fi_les">
                 <MenuItem Header="_Add log file(s)…" Click="AddFiles_Click" />
                 <MenuItem Header="Add _wildcard path…" Click="AddWildcard_Click" />
+                <Separator />
+                <MenuItem Header="Open current log in _editor" Click="OpenCurrentInEditor_Click" />
+                <MenuItem Header="{x:Static local:ShellOpen.RevealCurrentMenuHeader}"
+                          Click="RevealCurrent_Click" />
+                <MenuItem x:Name="FindMenuItem" Header="_Find in current tab…" Click="ShowFind_Click" />
+                <Separator />
                 <MenuItem Header="_Close current tab" Click="CloseTab_Click" />
                 <Separator />
                 <MenuItem Header="Merged _timeline for this view" Click="ToggleMerged_Click" />
+            </MenuItem>
+            <!--
+              Avalonia 11's MenuItem does not flip IsChecked on click by itself, so the
+              check marks bind one-way and each Click handler toggles the setting.
+            -->
+            <MenuItem Header="_Alerts">
+                <MenuItem Header="_Enable alerts" ToggleType="CheckBox"
+                          IsChecked="{Binding Alerts.Enabled, Mode=OneWay}" Click="ToggleAlertsEnabled_Click" />
+                <MenuItem Header="Alerts for _this view" ToggleType="CheckBox"
+                          IsChecked="{Binding SelectedView.Def.AlertsEnabled, Mode=OneWay}" Click="ToggleViewAlerts_Click" />
+                <Separator />
+                <MenuItem Header="Show _notification" ToggleType="CheckBox"
+                          IsChecked="{Binding Alerts.ShowToast, Mode=OneWay}" Click="ToggleShowToast_Click" />
+                <MenuItem Header="Play _sound" ToggleType="CheckBox"
+                          IsVisible="{x:Static local:DesktopAlerts.CanPlaySound}"
+                          IsChecked="{Binding Alerts.PlaySound, Mode=OneWay}" Click="TogglePlaySound_Click" />
+                <MenuItem Header="Only when LogLens is not in front" ToggleType="CheckBox"
+                          IsChecked="{Binding Alerts.OnlyWhenUnfocused, Mode=OneWay}" Click="ToggleOnlyUnfocused_Click" />
+                <Separator />
+                <MenuItem Header="Alert se_ttings…" Click="AlertSettings_Click" />
+                <MenuItem Header="Send a t_est alert" Click="TestAlert_Click" />
             </MenuItem>
             <MenuItem Header="_Tools">
                 <MenuItem Header="_Issues…" Click="Issues_Click" />
@@ -76,95 +103,136 @@
 
             <GridSplitter Grid.Column="1" Background="#3A3A3C" ResizeDirection="Columns" />
 
-            <!-- tabs + log pane -->
-            <TabControl Grid.Column="2"
-                        ItemsSource="{Binding SelectedView.Tabs}"
-                        SelectedItem="{Binding SelectedView.SelectedTab, Mode=TwoWay}"
-                        Background="#1E1E1E" Padding="0">
-                <TabControl.ItemTemplate>
-                    <DataTemplate>
-                        <TextBlock Text="{Binding Header}" />
-                    </DataTemplate>
-                </TabControl.ItemTemplate>
-                <TabControl.ContentTemplate>
-                    <DataTemplate>
-                        <DockPanel>
+            <!-- tabs + log pane, with one find bar acting on whichever pane is selected -->
+            <DockPanel Grid.Column="2">
 
-                            <!-- toolbar -->
-                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
-                                        Margin="6,4" Spacing="4">
-                                <ToggleButton Content="Follow" IsChecked="{Binding FollowTail, Mode=TwoWay}" />
-                                <ToggleButton Content="Pause" IsChecked="{Binding Paused, Mode=TwoWay}" />
-                                <Button Content="Clear" Click="Clear_Click" />
-                                <Button Content="Reload" Click="Reload_Click" />
-                                <Border Width="1" Background="#3A3A3C" Margin="4,2" />
-                                <ToggleButton IsChecked="{Binding ShowFatal, Mode=TwoWay}" Padding="8,3">
-                                    <TextBlock Text="F" Foreground="#FF8A8A" FontWeight="SemiBold" />
-                                </ToggleButton>
-                                <ToggleButton IsChecked="{Binding ShowError, Mode=TwoWay}" Padding="8,3">
-                                    <TextBlock Text="E" Foreground="#FF8A8A" />
-                                </ToggleButton>
-                                <ToggleButton IsChecked="{Binding ShowWarn, Mode=TwoWay}" Padding="8,3">
-                                    <TextBlock Text="W" Foreground="#FFC978" />
-                                </ToggleButton>
-                                <ToggleButton IsChecked="{Binding ShowInfo, Mode=TwoWay}" Padding="8,3">
-                                    <TextBlock Text="I" Foreground="#8FD3FF" />
-                                </ToggleButton>
-                                <ToggleButton IsChecked="{Binding ShowDebug, Mode=TwoWay}" Padding="8,3">
-                                    <TextBlock Text="D" Foreground="#9E9E9E" />
-                                </ToggleButton>
-                                <Border Width="1" Background="#3A3A3C" Margin="4,2" />
-                                <TextBlock Text="Show" Foreground="#9A9A9A" VerticalAlignment="Center" />
-                                <TextBox Width="150" Text="{Binding Filter.Include, Mode=TwoWay}" />
-                                <TextBlock Text="Hide" Foreground="#9A9A9A" VerticalAlignment="Center" />
-                                <TextBox Width="150" Text="{Binding Filter.Exclude, Mode=TwoWay}" />
-                                <ToggleButton Content=".*" IsChecked="{Binding Filter.IsRegex, Mode=TwoWay}" Padding="6,3" />
-                            </StackPanel>
+                <Border x:Name="FindBar" DockPanel.Dock="Bottom" IsVisible="False"
+                        Background="#252526" BorderBrush="#3A3A3C" BorderThickness="0,1,0,0" Padding="6,4">
+                    <DockPanel>
+                        <TextBlock Text="Find" Foreground="#9A9A9A" VerticalAlignment="Center"
+                                   Margin="0,0,6,0" DockPanel.Dock="Left" />
+                        <TextBox x:Name="FindBox" Width="260" DockPanel.Dock="Left" Margin="0,0,6,0" />
+                        <ToggleButton x:Name="FindRegex" Content=".*" DockPanel.Dock="Left" Margin="0,0,3,0"
+                                      Padding="6,3" ToolTip.Tip="Regular expression" />
+                        <ToggleButton x:Name="FindCase" Content="Aa" DockPanel.Dock="Left" Margin="0,0,8,0"
+                                      Padding="6,3" ToolTip.Tip="Match case" />
+                        <Button x:Name="FindPrevButton" Content="Previous" DockPanel.Dock="Left" Margin="0,0,4,0"
+                                Click="FindPrev_Click" />
+                        <Button x:Name="FindNextButton" Content="Next" DockPanel.Dock="Left" Margin="0,0,8,0"
+                                Click="FindNext_Click" />
+                        <Button Content="Close" DockPanel.Dock="Right" Click="HideFind_Click" />
+                        <TextBlock x:Name="FindStatus" Foreground="#9A9A9A" VerticalAlignment="Center" Margin="4,0" />
+                    </DockPanel>
+                </Border>
 
-                            <!-- counters -->
-                            <Border DockPanel.Dock="Bottom" Background="#252526" Padding="8,3">
-                                <StackPanel Orientation="Horizontal" Spacing="14">
-                                    <TextBlock Text="{Binding CountsSummary}" Foreground="#9A9A9A" FontSize="12" />
-                                    <TextBlock Text="{Binding ErrorCount, StringFormat='ERR {0}'}"
-                                               Foreground="#FF8A8A" FontSize="12" />
-                                    <TextBlock Text="{Binding WarnCount, StringFormat='WARN {0}'}"
-                                               Foreground="#FFC978" FontSize="12" />
-                                    <TextBlock Text="{Binding Status}" Foreground="#EF5350" FontSize="12" />
+                <TabControl
+                            ItemsSource="{Binding SelectedView.Tabs}"
+                            SelectedItem="{Binding SelectedView.SelectedTab, Mode=TwoWay}"
+                            Background="#1E1E1E" Padding="0">
+                    <TabControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Header}" />
+                        </DataTemplate>
+                    </TabControl.ItemTemplate>
+                    <TabControl.ContentTemplate>
+                        <DataTemplate>
+                            <DockPanel>
+
+                                <!-- toolbar -->
+                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
+                                            Margin="6,4" Spacing="4">
+                                    <ToggleButton Content="Follow" IsChecked="{Binding FollowTail, Mode=TwoWay}" />
+                                    <ToggleButton Content="Pause" IsChecked="{Binding Paused, Mode=TwoWay}" />
+                                    <Button Content="Clear" Click="Clear_Click" />
+                                    <Button Content="Reload" Click="Reload_Click" />
+                                    <Button Content="Editor" Click="PaneOpenInEditor_Click"
+                                            IsEnabled="{Binding SupportsOpenInEditor}"
+                                            ToolTip.Tip="Open this log file in your default text editor." />
+                                    <Border Width="1" Background="#3A3A3C" Margin="4,2" />
+                                    <ToggleButton IsChecked="{Binding ShowFatal, Mode=TwoWay}" Padding="8,3">
+                                        <TextBlock Text="F" Foreground="#FF8A8A" FontWeight="SemiBold" />
+                                    </ToggleButton>
+                                    <ToggleButton IsChecked="{Binding ShowError, Mode=TwoWay}" Padding="8,3">
+                                        <TextBlock Text="E" Foreground="#FF8A8A" />
+                                    </ToggleButton>
+                                    <ToggleButton IsChecked="{Binding ShowWarn, Mode=TwoWay}" Padding="8,3">
+                                        <TextBlock Text="W" Foreground="#FFC978" />
+                                    </ToggleButton>
+                                    <ToggleButton IsChecked="{Binding ShowInfo, Mode=TwoWay}" Padding="8,3">
+                                        <TextBlock Text="I" Foreground="#8FD3FF" />
+                                    </ToggleButton>
+                                    <ToggleButton IsChecked="{Binding ShowDebug, Mode=TwoWay}" Padding="8,3">
+                                        <TextBlock Text="D" Foreground="#9E9E9E" />
+                                    </ToggleButton>
+                                    <Border Width="1" Background="#3A3A3C" Margin="4,2" />
+                                    <TextBlock Text="Show" Foreground="#9A9A9A" VerticalAlignment="Center" />
+                                    <TextBox Width="150" Text="{Binding Filter.Include, Mode=TwoWay}" />
+                                    <TextBlock Text="Hide" Foreground="#9A9A9A" VerticalAlignment="Center" />
+                                    <TextBox Width="150" Text="{Binding Filter.Exclude, Mode=TwoWay}" />
+                                    <ToggleButton Content=".*" IsChecked="{Binding Filter.IsRegex, Mode=TwoWay}" Padding="6,3" />
+                                    <Button Content="Find" Click="ShowFind_Click"
+                                            ToolTip.Tip="Find in this tab (Cmd+F on macOS, Ctrl+F elsewhere)." />
                                 </StackPanel>
-                            </Border>
 
-                            <!-- the log -->
-                            <ListBox ItemsSource="{Binding Display}" Background="#141414"
-                                     FontFamily="Cascadia Mono,Consolas,Menlo,DejaVu Sans Mono,monospace"
-                                     FontSize="12.5"
-                                     AttachedToVisualTree="LinesList_Attached">
-                                <ListBox.Styles>
-                                    <Style Selector="ListBoxItem">
-                                        <Setter Property="Padding" Value="4,0" />
-                                        <Setter Property="MinHeight" Value="0" />
-                                        <Setter Property="Background"
-                                                Value="{Binding Background, Converter={x:Static local:Converters.HexBrushOrTransparent}}" />
-                                    </Style>
-                                </ListBox.Styles>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding Number}" Width="58" TextAlignment="Right"
-                                                       Margin="0,0,10,0" Foreground="#5A5A5A" />
-                                            <TextBlock Text="{Binding SourceName}" Width="90"
-                                                       Foreground="{Binding SourceColor, Converter={x:Static local:Converters.HexBrush}}"
-                                                       IsVisible="{Binding $parent[ListBox].DataContext.ShowsSourceColumn}" />
-                                            <TextBlock Text="{Binding Text}"
-                                                       Foreground="{Binding Foreground, Converter={x:Static local:Converters.HexBrush}}"
-                                                       FontWeight="{Binding Bold, Converter={x:Static local:Converters.BoldWeight}}" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </DockPanel>
-                    </DataTemplate>
-                </TabControl.ContentTemplate>
-            </TabControl>
+                                <!-- counters -->
+                                <Border DockPanel.Dock="Bottom" Background="#252526" Padding="8,3">
+                                    <StackPanel Orientation="Horizontal" Spacing="14">
+                                        <TextBlock Text="{Binding CountsSummary}" Foreground="#9A9A9A" FontSize="12" />
+                                        <TextBlock Text="{Binding ErrorCount, StringFormat='ERR {0}'}"
+                                                   Foreground="#FF8A8A" FontSize="12" />
+                                        <TextBlock Text="{Binding WarnCount, StringFormat='WARN {0}'}"
+                                                   Foreground="#FFC978" FontSize="12" />
+                                        <TextBlock Text="{Binding Status}" Foreground="#EF5350" FontSize="12" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- the log -->
+                                <ListBox ItemsSource="{Binding Display}" Background="#141414"
+                                         FontFamily="Cascadia Mono,Consolas,Menlo,DejaVu Sans Mono,monospace"
+                                         FontSize="12.5"
+                                         AttachedToVisualTree="LinesList_Attached"
+                                         DetachedFromVisualTree="LinesList_Detached">
+                                    <!--
+                                      In a file tab these act on the tab's file. In the merged view
+                                      they act on the SELECTED LINE's source file, as in the WPF app.
+                                    -->
+                                    <ListBox.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Go to this line's file tab" Click="GoToSourceTab_Click"
+                                                      IsVisible="{Binding ShowsSourceColumn}" />
+                                            <MenuItem Header="Open log in default editor" Click="ContextOpenInEditor_Click" />
+                                            <MenuItem Header="{x:Static local:ShellOpen.RevealMenuHeader}"
+                                                      Click="ContextReveal_Click" />
+                                        </ContextMenu>
+                                    </ListBox.ContextMenu>
+                                    <ListBox.Styles>
+                                        <Style Selector="ListBoxItem">
+                                            <Setter Property="Padding" Value="4,0" />
+                                            <Setter Property="MinHeight" Value="0" />
+                                            <Setter Property="Background"
+                                                    Value="{Binding Background, Converter={x:Static local:Converters.HexBrushOrTransparent}}" />
+                                        </Style>
+                                    </ListBox.Styles>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Number}" Width="58" TextAlignment="Right"
+                                                           Margin="0,0,10,0" Foreground="#5A5A5A" />
+                                                <TextBlock Text="{Binding SourceName}" Width="90"
+                                                           Foreground="{Binding SourceColor, Converter={x:Static local:Converters.HexBrush}}"
+                                                           IsVisible="{Binding $parent[ListBox].DataContext.ShowsSourceColumn}" />
+                                                <TextBlock Text="{Binding Text}"
+                                                           Foreground="{Binding Foreground, Converter={x:Static local:Converters.HexBrush}}"
+                                                           FontWeight="{Binding Bold, Converter={x:Static local:Converters.BoldWeight}}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
+                        </DataTemplate>
+                    </TabControl.ContentTemplate>
+                </TabControl>
+            </DockPanel>
         </Grid>
     </DockPanel>
 </Window>

@@ -6,6 +6,18 @@ meant. Versions follow the tags (`v1.5.3` → `1.5.3`).
 
 ## Unreleased
 
+### Added
+- **Find, editor/Finder and alerts on macOS.** The Mac app gains find-in-tab
+  (`Cmd+F`; `Cmd+G` / `Shift+Cmd+G` or Enter / Shift+Enter to step), **Editor** and
+  **Show in Finder** on the Files menu, the pane toolbar and the log's right-click
+  menu (on the merged view they act on the selected line's file), and alerts: the
+  same thresholds, per-view mute, focus check, custom pattern and throttling as
+  Windows, delivered as a Notification Center banner and a macOS system sound
+  (*Glass* / *Basso* by default), with an **Alerts** menu and settings dialog. The
+  Mac sound choice is stored separately, so a workspace shared with Windows
+  teammates keeps theirs. Self-update stays Windows-only — see
+  `docs/adr/0002-macos-parity-scope.md`. ([#11](https://github.com/JollyKrampus/loglens/issues/11))
+
 ### Changed
 - **Issue grouping masks short ids and numbered names.** Short hex ids
   (`correlationId=5747bc31`) and digits inside lowercase names (`node7`,

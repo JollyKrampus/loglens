@@ -22,3 +22,6 @@ loglens.workspace.json
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Avalonia build telemetry
+.avalonia-build-tasks/

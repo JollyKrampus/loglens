@@ -31,7 +31,8 @@ LogLens.Core/          net8.0, NO UI framework. Models, services, view-models.
   Models/              LogLine, HighlightRule + Severity, Workspace (the JSON contract)
   Services/            LogTailer, TimestampParser, RuleSet, SeverityFilter,
                        WorkspaceStore, IssueStore/IssueRecorder/SignatureBuilder,
-                       JiraTemplate, RulePresets, PathResolver, UpdateService
+                       JiraTemplate, RulePresets, PathResolver, UpdateService,
+                       AlertPolicy (when to alert), LineFinder (find-in-tab)
   ViewModels/          MainVm owns ViewVm owns panes; LogPaneVm (abstract) is
                        subclassed by LogTab (one file) and MergedTab (one view)
   IUiThread.cs         the only UI-framework dependency, as an interface
@@ -41,14 +42,17 @@ LogLens/               net8.0-windows, WPF + WinForms. The flagship app.
   MainWindow.xaml(.cs) the shell: menus, sidebar, tabs, status bar, update handoff
   Controls/LogPane     the virtualized log list (both file tabs and merged use it)
   Dialogs/             Settings, Rules, Issues, Alerts, ViewEdit, Update, Prompt
-  Services/            Windows-only: AlertService (tray balloon + taskbar flash),
-                       SoundLibrary, ShellOpen (editor / File Explorer)
+  Services/            Windows-only: AlertService (delivery: tray balloon + taskbar
+                       flash; the decision is Core's AlertPolicy), SoundLibrary,
+                       ShellOpen (editor / File Explorer)
   Core/                WpfUiThread, WPF converters, RelayCommand
   Themes/              Dark.xaml, Light.xaml, Controls.xaml (control templates)
 
 LogLens.Avalonia/      net8.0, Avalonia 11.3. The macOS (and future Linux) shell.
-                       Binds the same LogLens.Core view-models as WPF. Eight files:
-                       Program/App/MainWindow, Dialogs, GridDialogs, Support.
+                       Binds the same LogLens.Core view-models as WPF. Ten files:
+                       Program/App/MainWindow, Dialogs, GridDialogs, Support,
+                       ShellOpen (open -t / open -R / xdg-open), DesktopAlerts
+                       (osascript banner + afplay; notify-send on Linux).
 
 tests/RuleCheck/       net8.0-windows console app. The entire test suite.
 
@@ -96,7 +100,7 @@ before proposing a different UI stack.
 
 **Nothing here builds on Linux except `LogLens.Core` and `LogLens.Avalonia`.** WPF
 (`LogLens`) and the test project (`tests/RuleCheck`, which exercises the Windows-only
-`AlertService` and `SoundLibrary`) target `net8.0-windows` and require a Windows host.
+`SoundLibrary`) target `net8.0-windows` and require a Windows host.
 Linux dev containers for this repo also tend to ship without a `dotnet` SDK at all —
 check with `dotnet --version` first, and if you cannot compile or run the checks, say
 so plainly rather than reporting a change as verified.
@@ -144,7 +148,8 @@ Sections it covers — add to the matching one rather than starting a new patter
 | Pipe-format detection | `RuleSet.LooksPipeLevelled` sampling |
 | Timestamp detection | format picking, time-only midnight rollover |
 | Merged timeline ordering | a real `MergedTab`: watermark release, tie-breaks, late-arrival re-sort, reseed on rewind |
-| Alert decisions / sounds | `AlertService.Decide` outcomes, throttling, sound resolution |
+| Alert decisions / sounds | `AlertPolicy.Decide` outcomes, throttling, shared wording, Mac sound fields, `SoundLibrary` resolution |
+| Find in tab | `LineFinder`: plain/regex/case, stepping from the selection, wrap, re-scan on growth |
 | Severity chip filter | carry semantics for unclassified lines |
 | Workspace compatibility | **a v1.1.0-shaped workspace must still load losslessly**; portable vs per-user location |
 | Legacy default-rule upgrade | untouched old defaults upgrade; edited lists never do |
@@ -347,6 +352,14 @@ a manual dispatch from a branch called `version-bump` would otherwise stamp
   kept beside the exe was stranded on every `scoop update`.
 - Binaries are unsigned/un-notarised; users run `xattr -cr LogLens.app` once. The CI
   has a disabled codesign step ready for the day an Apple account exists.
+- Mac alert text comes from log lines, so it is an injection surface. `DesktopAlerts`
+  passes it to `osascript` as **argv** against a constant script (read by negative
+  index, so a passed-through `--` can't shift it) — never interpolate it into
+  AppleScript source. Sound names are matched against the system-sound list, never
+  used as a path.
+- Mac sounds are **separate** `AlertSettings` fields (`MacSoundName`,
+  `MacFatalSoundName`), not a reinterpretation of `SoundName`: a workspace shared
+  between a Windows and a Mac teammate must keep both choices.
 
 ---
 
@@ -394,11 +407,15 @@ working when copied to a USB stick or a jump box with nothing installed.
 When you change behaviour, decide which layer it belongs to:
 
 - **Logic** → `LogLens.Core`. Both shells get it for free; add a `RuleCheck` case.
-- **Windows-only chrome** → `LogLens/`. Alerts/sounds, self-update UI, find-in-tab,
-  editor and Explorer integration are Windows-only *by design* today.
-- **Avalonia parity** → `LogLens.Avalonia/`. It is deliberately thin (8 source files) and
-  binds the same view-models. Known gaps vs WPF: alerts/sounds, self-update UI,
-  find-in-tab, editor/Explorer integration. Closing a gap is a port, not a redesign.
+- **Windows-only chrome** → `LogLens/`. Self-update (UI and the rename swap), the
+  tray balloon, taskbar flash and `.wav` library are Windows-only *by design*
+  (`docs/adr/0002-macos-parity-scope.md` says why self-update stays that way).
+- **Avalonia parity** → `LogLens.Avalonia/`. It is deliberately thin (10 source files) and
+  binds the same view-models. Find-in-tab, editor/Finder integration and alerts are
+  ported; what remains different is deliberate: no self-update, no taskbar flash,
+  and clicking a notification can't jump to its view. Closing a gap is a port, not a
+  redesign — and if the port needs logic that lives in WPF code-behind, move that
+  logic to Core first (as `AlertPolicy` and `LineFinder` were).
 
 If you add a view-model property the WPF XAML binds to, check whether the Avalonia
 XAML should bind it too — silent divergence between the shells is the main risk the

@@ -108,3 +108,14 @@ One consequence worth recording: a bundle is **not** a portable install.
 `WorkspaceStore` explicitly refuses to treat `Contents/MacOS` as the portable location
 — writing there would hide the workspace inside the bundle and invalidate its signature
 the day releases are signed — and uses `~/.config/LogLens` instead.
+
+## Update — 2026-10-08: the feature gaps were ported
+
+The Consequences above listed the Avalonia shell's gaps as "ports-not-designs". Three
+of the four have since been ported — find-in-tab, editor/Finder integration and
+alerts — and self-update was kept Windows-only on purpose; the scope and reasoning are
+recorded in [ADR 0002](0002-macos-parity-scope.md). Two pieces of logic that turned out
+to live in WPF code-behind (the alert decision and the find matching) moved into
+`LogLens.Core` first, which is what this ADR's "consumed verbatim" principle asks for.
+
+**The decision is unchanged.**
