@@ -6,6 +6,14 @@ meant. Versions follow the tags (`v1.5.3` → `1.5.3`).
 
 ## Unreleased
 
+### Changed
+- **Issue grouping masks short ids and numbered names.** Short hex ids
+  (`correlationId=5747bc31`) and digits inside lowercase names (`node7`,
+  `web03`, `worker_12`) no longer split one fault into an issue per host or
+  request. Issues already stored for messages containing such tokens stop
+  growing; new sightings start a fresh, correctly grouped issue beside them —
+  their history, counts and Jira keys are kept, not merged.
+
 ## 1.5.4 — 2026-10-08
 
 ### Added

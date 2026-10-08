@@ -870,6 +870,11 @@ internal static class Program
             ("Took 864ms using 12.5MB", "Took <n> using <n>", "numbers with units"),
             ("Queue at 97% after 1,024 retries", "Queue at <n>% after <n> retries", "percentages and grouped numbers"),
             ("Disk   full\ton  node", "Disk full on node", "runs of whitespace"),
+            ("Entering handler correlationId=5747bc31", "Entering handler correlationId=<hex>", "a short hex id"),
+            ("Pool on node7 and web03 drained", "Pool on node<n> and web<n> drained", "digits inside lowercase host names"),
+            ("Job tmp9xz3q stalled on worker_12", "Job tmp<n>xz<n>q stalled on worker_<n>", "digits inside generated lowercase ids"),
+            ("Int32 overflow in SHA256 over HTTP2", "Int32 overflow in SHA256 over HTTP2", "uppercase type and protocol names keep their digits"),
+            ("Row was added, then faced a decade of decay", "Row was added, then faced a decade of decay", "English words spelled from hex letters stay words"),
         ];
 
         foreach (var (input, output, what) in masks)
@@ -887,6 +892,13 @@ internal static class Program
             + "trace 0123456789abcdef0123456789abcdef key 'other' after 3s");
         Report(m1.Hash == m2.Hash, "ips, emails, times, hex and units all vary without splitting the group",
             $"\n        {m1.Signature}\n        {m2.Signature}");
+
+        // The field report: the same fault on two hosts with two correlation ids
+        // used to be two issues because neither token was masked.
+        var h1 = SignatureBuilder.Build("ERROR Sync Lease lost on node7 correlationId=5747bc31");
+        var h2 = SignatureBuilder.Build("ERROR Sync Lease lost on node12 correlationId=09ae44f0");
+        Report(h1.Hash == h2.Hash, "host names and short correlation ids vary without splitting the group",
+            $"\n        {h1.Signature}\n        {h2.Signature}");
 
         // An exception + stack gives a title a human can triage from.
         var withStack = SignatureBuilder.Build(

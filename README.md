@@ -319,8 +319,10 @@ one issue and counts once for each.
 
 Occurrences are matched on a normalised signature. Everything that varies per
 occurrence is masked — timestamps, GUIDs, IP addresses, file paths, URLs, emails,
-hex, quoted strings and all numbers — leaving a skeleton that is identical for every
-instance of the same fault:
+hex ids long and short, quoted strings, all numbers, and the digits in lowercase
+names like `node7` or `web03` — leaving a skeleton that is identical for every
+instance of the same fault. Capitalised names keep their digits (`Int32`, `HTTP2`):
+those are things, not ids:
 
 ```
 2026-08-14 12:52:40.0472|ERROR|Acme.Payments|Timeout calling payments after 864ms for order 5512

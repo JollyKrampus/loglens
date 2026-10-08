@@ -42,9 +42,20 @@ public static class SignatureBuilder
         (new Regex(@"\b[\w.+-]+@[\w-]+\.[\w.-]+\b", Opts), "<email>"),
         (new Regex(@"\b0x[0-9a-fA-F]+\b", Opts), "<hex>"),
         (new Regex(@"\b[0-9a-fA-F]{16,}\b", Opts), "<hex>"),
+        // Short hex ids (correlationId=5747bc31). Requiring both a digit and a
+        // letter keeps plain numbers for the number rule and leaves English words
+        // spelled from a–f ("added", "faced", "decade") alone.
+        (new Regex(@"\b(?=[0-9a-fA-F]*\d)(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{6,15}\b", Opts), "<hex>"),
         (new Regex(@"'[^']*'", Opts), "'<s>'"),
         (new Regex(@"""[^""]*""", Opts), "\"<s>\""),
         (new Regex(@"\b\d+(?:\.\d+)?(?:ms|s|kb|mb|gb|%)\b", Opts | RegexOptions.IgnoreCase), "<n>"),
+        // Digits inside a lowercase identifier: host and worker names (node7, web03,
+        // worker_12), generated ids (abc123def). \b never falls between a letter and
+        // a digit, so the plain-number rule below cannot reach these. Only the digit
+        // runs are masked ("node<n>"), keeping the readable part for the title.
+        // Tokens starting uppercase are left alone on purpose — Int32, SHA256 and
+        // HTTP2 are names, not ids. Runs after the units rule so "864ms" stays <n>.
+        (new Regex(@"(?<=\b[a-z][a-z0-9_]*)\d+(?=[a-z0-9_]*\b)", Opts), "<n>"),
         (new Regex(@"\b\d[\d,._]*\b", Opts), "<n>"),
     ];
 
