@@ -6,6 +6,8 @@ meant. Versions follow the tags (`v1.5.3` → `1.5.3`).
 
 ## Unreleased
 
+## 1.5.4 — 2026-10-08
+
 ### Added
 - **Issues by application.** The Issues window has an **Application** dropdown —
   every log file in the selected view, by its tab name, with how many distinct
@@ -21,6 +23,12 @@ meant. Versions follow the tags (`v1.5.3` → `1.5.3`).
   database to the per-user folder instead of beside the exe. The Scoop manifest
   creates it, because Scoop installs each version into a new folder and a
   workspace kept beside the old exe was lost on every `scoop update`.
+
+### Fixed
+- **Self-update refuses a download it cannot verify.** A release without a
+  `SHA256SUMS.txt`, a sums file with no `LogLens.exe` line, or a proxy answering
+  the sums URL with an HTML page all used to skip verification silently and
+  install the download anyway. Each is now refused with a readable message.
 
 ## 1.5.3 — 2026-08-18
 
