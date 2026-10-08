@@ -20,7 +20,7 @@ optional GitHub-releases check. Windows (WPF) is the flagship; macOS (Avalonia) 
 an early port. `README.md` is the user-facing manual and explains *why* most
 features are shaped the way they are — it is worth reading in full before design work.
 
-Current version: **1.5.3** (see "Releasing" for the three places that number lives).
+Current version: **1.5.4** (see "Releasing" for the three places that number lives).
 
 ---
 
@@ -166,14 +166,14 @@ history — nearly every "Fix what the review confirmed" commit adds one.
 ## Releasing
 
 1. Bump the version in **all three** project files — they are currently kept in
-   lockstep at `1.5.3`:
+   lockstep at `1.5.4`:
    - `LogLens/LogLens.csproj` (`<Version>` *and* `<InformationalVersion>`) — this is
      the one `UpdateService.CurrentVersion` reads from the entry assembly and the
      About box shows.
    - `LogLens.Core/LogLens.Core.csproj` (`<Version>`)
    - `LogLens.Avalonia/LogLens.Avalonia.csproj` (`<Version>`, `<InformationalVersion>`)
 2. Move `CHANGELOG.md`'s **Unreleased** section under the new version and date.
-3. `git tag -a v1.5.4 -m "what changed" && git push origin v1.5.4`
+3. `git tag -a v1.5.5 -m "what changed" && git push origin v1.5.5`
 4. Once the release exists, point the package manifests at it: `bucket/loglens.json`
    (`version`, `url`, `hash` — Scoop's `checkver.ps1 -u` fills them from the
    `autoupdate` block) and a new `packaging/winget/manifests/…/<version>/` folder
