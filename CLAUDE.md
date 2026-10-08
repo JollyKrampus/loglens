@@ -303,7 +303,11 @@ a manual dispatch from a branch called `version-bump` would otherwise stamp
   It drops v1's indexes **first**, because SQLite index names are schema-wide and a
   surviving `ix_issues_count` silently no-ops the new `CREATE INDEX IF NOT EXISTS`.
 - Grouping is **deterministic regex only** — `SignatureBuilder` masks timestamps,
-  GUIDs, IPs, paths, URLs, emails, hex, quoted strings and numbers. No model, no
+  GUIDs, IPs, paths, URLs, emails, hex (long, `0x`, and short ids with a digit and
+  a letter), quoted strings, numbers, and digit runs inside lowercase names
+  (`node7` → `node<n>`; `Int32` is left alone). Changing a mask changes the hash
+  of every stored issue it touches, which strands their counts and Jira keys — so
+  the masks are pinned one by one in RuleCheck, and a change needs a changelog line. No model, no
   network, no per-line cost. A grouping that drifts is worse than one that is merely
   good; do not "improve" this with inference.
 - Writes are queued and flushed on a 2 s background timer, capped at 50,000 queued.
