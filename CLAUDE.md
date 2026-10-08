@@ -143,15 +143,15 @@ Sections it covers — add to the matching one rather than starting a new patter
 | Multi-line events | continuation lines cannot declare severity |
 | Pipe-format detection | `RuleSet.LooksPipeLevelled` sampling |
 | Timestamp detection | format picking, time-only midnight rollover |
-| Merged timeline ordering | watermark release + late-arrival re-sort |
+| Merged timeline ordering | a real `MergedTab`: watermark release, tie-breaks, late-arrival re-sort, reseed on rewind |
 | Alert decisions / sounds | `AlertService.Decide` outcomes, throttling, sound resolution |
 | Severity chip filter | carry semantics for unclassified lines |
-| Workspace compatibility | **a v1.1.0-shaped workspace must still load losslessly** |
+| Workspace compatibility | **a v1.1.0-shaped workspace must still load losslessly**; portable vs per-user location |
 | Legacy default-rule upgrade | untouched old defaults upgrade; edited lists never do |
 | Continuation semantics | the settled-verdict gate |
-| Self-update | version parsing, checksum parsing, the rename swap |
-| Tailer | CRLF across the 64 KB read boundary, truncate-and-rewrite |
-| Issue signatures / database / migration | grouping stability, upsert, v1→v2 schema move |
+| Self-update | version/checksum parsing, local-server download + verify (mismatch and missing checksum refused), the rename swap, leftover cleanup, predecessor wait |
+| Tailer | CRLF and UTF-8 across the 64 KB read boundary, partial-line hold-back, truncate-and-rewrite, wildcard roll-over, rename-rotation |
+| Issue signatures / database / migration | each mask pinned, grouping stability, upsert, per-application filter, v1→v2 schema move |
 
 Helpers: `Expect(ruleSet, line, expectedSeverity, description)`,
 `ExpectRule(...)` when the *rule name* matters, `Report(ok, what, detail)`,

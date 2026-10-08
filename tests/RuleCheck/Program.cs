@@ -390,6 +390,184 @@ internal static class Program
         Report(actual[^2] == "prod  +5s" && actual[^1] == "prod  +5s (stack frame)",
             "a continuation line stays directly beneath the line it belongs to",
             "got: " + string.Join(" | ", actual[^2..]));
+
+        CheckMergedTabLive();
+    }
+
+    /// <summary>
+    /// Everything above sorts a list with a copy of the comparator, which proves the
+    /// comparator and nothing else. This drives a real MergedTab fed by real LogTabs
+    /// tailing real files, so the watermark hold, the late-batch repair and the
+    /// rewind reseed run exactly as they do in the app.
+    ///
+    /// Time is controlled rather than raced: every view-model callback goes through a
+    /// <see cref="PumpedUi"/> that only runs when this thread pumps it. "Let the
+    /// window pass" is therefore a sleep with nothing pumped, after which the queued
+    /// flush ticks see every held line as old at once — the outcome cannot depend on
+    /// where a 200 ms timer tick happened to fall between two tailers' polls.
+    /// </summary>
+    private static void CheckMergedTabLive()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"loglens-merge-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+
+        const int window = 1000;
+        var ui = new PumpedUi();
+        var settings = new AppSettings { PollIntervalMs = 50, InitialTailKb = 0, MergeWindowMs = window };
+        var rules = new RuleSet([], HighlightRule.Defaults());
+
+        var pathA = Path.Combine(dir, "a.log");
+        var pathB = Path.Combine(dir, "b.log");
+        File.WriteAllText(pathA, "");
+        File.WriteAllText(pathB, "");
+
+        var a = new LogTab(new LogSource { Name = "a", Path = pathA }, settings, ui);
+        var b = new LogTab(new LogSource { Name = "b", Path = pathB }, settings, ui);
+
+        // Indices deliberately opposite to attach order: ties must break on
+        // SourceIndex, not on whichever list position the tab happens to occupy.
+        a.SourceIndex = 1;
+        b.SourceIndex = 0;
+
+        var merged = new MergedTab(settings, () => "a, b", ui);
+        merged.Attach([a, b]);
+
+        var settle = TimeSpan.FromSeconds(5);
+
+        try
+        {
+            a.Start(rules);
+            b.Start(rules);
+            WaitFor(() => { ui.Pump(); return a.IsPrimed && b.IsPrimed; }, settle);
+
+            // Two sources whose lines interleave in time, plus a three-way tie at
+            // 12:00:05. Within one release the held lines are gathered newest-first,
+            // so without the (SourceIndex, Number) keys a-tie-2 would tend to come
+            // out above a-tie-1.
+            File.AppendAllText(pathA, FileText(
+                "2026-08-14 12:00:00.000 INFO a-0",
+                "2026-08-14 12:00:02.000 INFO a-2",
+                "2026-08-14 12:00:04.000 INFO a-4",
+                "2026-08-14 12:00:05.000 INFO a-tie-1",
+                "2026-08-14 12:00:05.000 INFO a-tie-2"));
+            File.AppendAllText(pathB, FileText(
+                "2026-08-14 12:00:01.000 INFO b-1",
+                "2026-08-14 12:00:03.000 INFO b-3",
+                "2026-08-14 12:00:05.000 INFO b-tie"));
+
+            WaitFor(() => { ui.Pump(); return a.TotalLines == 5 && b.TotalLines == 3; }, settle);
+            int heldOnArrival = merged.TotalLines;
+
+            // Half a window later: still younger than the watermark, still held.
+            Thread.Sleep(window / 2);
+            ui.Pump();
+            int heldAtHalfWindow = merged.TotalLines;
+
+            Report(a.TotalLines == 5 && b.TotalLines == 3 && heldOnArrival == 0 && heldAtHalfWindow == 0,
+                "lines younger than the merge window are held back, not appended",
+                $"tabs={a.TotalLines}/{b.TotalLines}, merged on arrival={heldOnArrival}, at half window={heldAtHalfWindow}");
+
+            Thread.Sleep(window / 2 + 300);
+            WaitFor(() => { ui.Pump(); return merged.TotalLines == 8; }, settle);
+
+            string[] expected = ["a-0", "b-1", "a-2", "b-3", "a-4", "b-tie", "a-tie-1", "a-tie-2"];
+
+            var released = MergedTexts(merged.Buffer);
+            Report(released.SequenceEqual(expected),
+                "once past the window, both sources release as one time-ordered append",
+                "got: " + string.Join(" | ", released));
+
+            Report(released[^3..].SequenceEqual(["b-tie", "a-tie-1", "a-tie-2"]),
+                "timestamp ties break on SourceIndex, then on the line's own number",
+                "got: " + string.Join(" | ", released[^3..]));
+
+            Report(MergedTexts(merged.Display).SequenceEqual(expected) && !merged.MergeInfo.Contains("late"),
+                "an in-window release needs no repair and the display matches the buffer",
+                $"display: {string.Join(" | ", MergedTexts(merged.Display))}; info='{merged.MergeInfo}'");
+
+            // A batch older than what was already released: the stalled-source case
+            // the watermark cannot absorb. It must be repaired by a full re-sort and
+            // admitted to in the status bar.
+            File.AppendAllText(pathB, FileText("2026-08-14 12:00:00.500 INFO b-late"));
+            WaitFor(() => { ui.Pump(); return merged.TotalLines == 9; }, settle);
+
+            var afterLate = MergedTexts(merged.Buffer);
+            Report(afterLate.SequenceEqual(["a-0", "b-late", "b-1", "a-2", "b-3", "a-4", "b-tie", "a-tie-1", "a-tie-2"])
+                   && MergedTexts(merged.Display).SequenceEqual(afterLate),
+                "a late batch older than the released lines is re-sorted into place",
+                "got: " + string.Join(" | ", afterLate));
+
+            Report(merged.MergeInfo.Contains("1 late batch(es) re-sorted"),
+                "the status bar reports the late batch it had to repair",
+                $"info='{merged.MergeInfo}'");
+
+            // Truncate-and-rewrite a.log: its tab clears and signals Rewound, and the
+            // merged view must rebuild from what the tabs now hold. Dropping only the
+            // held lines would leave a's pre-rotation copies behind.
+            File.WriteAllText(pathA, FileText("2026-08-14 12:00:06.000 INFO a-rotated"));
+            WaitFor(() =>
+            {
+                ui.Pump();
+                return a.TotalLines == 1 && MergedTexts(merged.Buffer).Contains("a-rotated");
+            }, settle + TimeSpan.FromMilliseconds(window));
+
+            var afterRewind = MergedTexts(merged.Buffer);
+            Report(afterRewind.SequenceEqual(["b-late", "b-1", "b-3", "b-tie", "a-rotated"]),
+                "a rewound source reseeds the merged view with no stale or duplicated lines",
+                "got: " + string.Join(" | ", afterRewind));
+
+            bool numbered = true;
+            for (int i = 0; i < merged.Buffer.Count; i++)
+                if (merged.Buffer[i].Number != i + 1) numbered = false;
+            Report(numbered && merged.Buffer.All(l => l.SourceName == (l.SourceIndex == 1 ? "a" : "b")),
+                "after a reseed the merged lines are renumbered and stamped with their current source",
+                string.Join(" | ", merged.Buffer.Select(l => $"{l.Number}:{l.SourceName}:{l.Text}")));
+        }
+        finally
+        {
+            merged.Dispose();
+            a.Dispose();
+            b.Dispose();
+            try { Directory.Delete(dir, true); } catch { /* temp files */ }
+        }
+    }
+
+    private static string FileText(params string[] lines) => string.Join("\n", lines) + "\n";
+
+    /// <summary>The message tag at the end of each merged line, for readable comparisons.</summary>
+    private static string[] MergedTexts(IEnumerable<LogLine> lines)
+        => lines.Select(l => l.Text[(l.Text.LastIndexOf(' ') + 1)..]).ToArray();
+
+    /// <summary>
+    /// A stand-in UI thread that queues posts until the check pumps them. Running
+    /// them inline would not do: tailers and the merge flush timer post from
+    /// threadpool threads, so view-model code would run concurrently on several
+    /// threads at once — something the real dispatcher never allows. Draining the
+    /// queue on the checking thread keeps the single-UI-thread contract and leaves
+    /// the check in charge of when each callback runs.
+    /// </summary>
+    private sealed class PumpedUi : LogLens.Core.IUiThread
+    {
+        private readonly Queue<Action> _queue = new();
+
+        public void Post(Action action)
+        {
+            lock (_queue) _queue.Enqueue(action);
+        }
+
+        public void Pump()
+        {
+            while (true)
+            {
+                Action next;
+                lock (_queue)
+                {
+                    if (_queue.Count == 0) return;
+                    next = _queue.Dequeue();
+                }
+                next();
+            }
+        }
     }
 
     private static LogLine Line(long number, string text, DateTime ts, int sourceIndex)
@@ -673,6 +851,43 @@ internal static class Program
         Report(e1.Hash == e2.Hash, "guids, paths, urls and quoted values are masked",
             $"\n        {e1.Signature}\n        {e2.Signature}");
 
+        // Each remaining mask, pinned to its exact output. The hash is the database
+        // key, so any change here splits every stored issue whose message contains
+        // that kind of token into a new row — orphaning its count and Jira key. These
+        // also pin the ORDER of the masks: a timestamp must not be eaten as a time
+        // plus numbers, an IP not as four numbers, a GUID not as hex fragments.
+        (string In, string Out, string What)[] masks =
+        [
+            ("Job for 2026-08-14T12:52:40.123+02:00 did not run", "Job for <ts> did not run", "an ISO timestamp inside the message"),
+            ("Heartbeat missed at 12:52:40.123", "Heartbeat missed at <time>", "a time of day"),
+            ("Connect to 10.0.0.12:5432 refused", "Connect to <ip> refused", "an IP with port"),
+            (@"Cannot read \\fileserver\share\in\x.csv", "Cannot read <path>", "a UNC path"),
+            ("Mail to ops.team+alerts@acme-corp.example.com bounced", "Mail to <email> bounced", "an email address"),
+            ("Access violation at 0x7FFE12AB", "Access violation at <hex>", "a 0x hex literal"),
+            ("Bad token 9f86d081884c7d659a2feaa0c55ad015", "Bad token <hex>", "a long bare hex string"),
+            ("Lease 3f2504e0-4f89-11d3-9a0c-0305e82c3301 expired", "Lease <guid> expired", "a GUID, whole"),
+            ("Key 'customer-42' missing", "Key '<s>' missing", "a single-quoted value"),
+            ("Took 864ms using 12.5MB", "Took <n> using <n>", "numbers with units"),
+            ("Queue at 97% after 1,024 retries", "Queue at <n>% after <n> retries", "percentages and grouped numbers"),
+            ("Disk   full\ton  node", "Disk full on node", "runs of whitespace"),
+        ];
+
+        foreach (var (input, output, what) in masks)
+        {
+            var masked = SignatureBuilder.Mask(input);
+            Report(masked == output, $"masking: {what}", $"'{input}' -> '{masked}', expected '{output}'");
+        }
+
+        // And all of them together, varying every token, still group as one fault.
+        var m1 = SignatureBuilder.Build(
+            "ERROR Sync Host 10.0.0.12:5432 rejected ops@acme.example.com at 12:52:40 code 0x80004005 "
+            + "trace 9f86d081884c7d659a2feaa0c55ad015 key 'k1' after 864ms");
+        var m2 = SignatureBuilder.Build(
+            "ERROR Sync Host 192.168.1.7:80 rejected dev+x@other.example.org at 03:11:09 code 0x8007000E "
+            + "trace 0123456789abcdef0123456789abcdef key 'other' after 3s");
+        Report(m1.Hash == m2.Hash, "ips, emails, times, hex and units all vary without splitting the group",
+            $"\n        {m1.Signature}\n        {m2.Signature}");
+
         // An exception + stack gives a title a human can triage from.
         var withStack = SignatureBuilder.Build(
             "2026-08-14 12:52:44.1692|ERROR|Acme.Orders.OrderService|Timeout calling payments",
@@ -891,6 +1106,10 @@ internal static class Program
     /// Opening one must carry every row over — with its Jira key, notes and ignore
     /// flag — and new sightings must land in proper per-view rows beside them.
     /// </summary>
+    /// <summary>A fault whose 1.3 row is keyed by its real hash, so new sightings can find it.</summary>
+    private static readonly IssueFingerprint LegacyFingerprint =
+        SignatureBuilder.Build("ERROR Worker Timeout after 100ms");
+
     private static void CheckIssueStoreMigration()
     {
         var path = Path.Combine(Path.GetTempPath(), $"loglens-migrate-test-{Guid.NewGuid():N}.db");
@@ -926,6 +1145,20 @@ internal static class Program
                          'Prod,Test', 'app.log', NULL, NULL, 1);
                     """;
                 cmd.ExecuteNonQuery();
+
+                // One more 1.3 row, keyed by a REAL fingerprint hash and seen in a
+                // single view — the common case. A sighting of it after the upgrade
+                // must continue this row, not start a fresh one beside it.
+                using var legacy = c.CreateCommand();
+                legacy.CommandText = """
+                    INSERT INTO issues VALUES
+                        ($hash, 5, 'Legacy timeout', $sig, NULL, NULL, NULL, 'sample3', NULL, 5,
+                         '2026-08-01T00:00:00.0000000Z', '2026-08-09T00:00:00.0000000Z',
+                         'Prod', 'app.log', 'PLAT-7', NULL, 0);
+                    """;
+                legacy.Parameters.AddWithValue("$hash", LegacyFingerprint.Hash);
+                legacy.Parameters.AddWithValue("$sig", LegacyFingerprint.Signature);
+                legacy.ExecuteNonQuery();
             }
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
 
@@ -953,6 +1186,32 @@ internal static class Program
 
                 Report(store.Query(Severity.Error, view: "Dev").Count == 1,
                     "new sightings after migration land in per-view rows", "");
+
+                store.Record([
+                    new IssueOccurrence(LegacyFingerprint, Severity.Error, "ERROR Worker Timeout after 31ms",
+                        null, "Prod", "app.log", new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Utc))
+                ]);
+                var continued = store.Query(view: "Prod", includeFiled: true)
+                    .Where(i => i.Hash == LegacyFingerprint.Hash).ToList();
+                Report(continued.Count == 1 && continued[0].Count == 6 && continued[0].JiraKey == "PLAT-7"
+                       && continued[0].FirstSeenUtc == new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc)
+                       && continued[0].LastSeenUtc == new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Utc),
+                    "a migrated single-view row is continued by new sightings, keeping its history and Jira key",
+                    string.Join("; ", continued.Select(i =>
+                        $"count={i.Count} jira={i.JiraKey} first={i.FirstSeenUtc:O} last={i.LastSeenUtc:O}")));
+            }
+
+            // Every launch after the upgrade opens an already-migrated database; that
+            // path must leave the rows exactly as they are.
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            using (var again = new IssueStore(path))
+            {
+                var rows = again.Query(includeIgnored: true, includeFiled: true, limit: 10);
+                var legacyRow = rows.FirstOrDefault(i => i.Hash == LegacyFingerprint.Hash);
+                Report(rows.Count == 4 && legacyRow?.Count == 6
+                       && rows.FirstOrDefault(i => i.Hash == "aaaa")?.Count == 42,
+                    "reopening a migrated database changes nothing",
+                    $"rows={rows.Count}, legacy count={legacyRow?.Count}");
             }
 
             // The migrated schema must match what a fresh install creates — the
@@ -1466,6 +1725,10 @@ internal static class Program
             try { Directory.Delete(dir, true); } catch { }
         }
 
+        CheckDownloadAndVerify();
+        CheckLeftoverCleanup();
+        CheckWaitForPredecessor();
+
         // Live check against the real GitHub API — opt-in because CI networking and
         // rate limits make it flaky there. Run locally: RULECHECK_LIVE=1
         if (Environment.GetEnvironmentVariable("RULECHECK_LIVE") == "1")
@@ -1498,6 +1761,254 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// DownloadAndVerifyAsync stages beside <see cref="Environment.ProcessPath"/> — when
+    /// these checks run, that is this check program in its own build output, so the
+    /// staged file is ours to create and delete. Run any other way (through a bare
+    /// `dotnet RuleCheck.dll`, where the process is the dotnet host) it would stage
+    /// beside the SDK, so that case is skipped rather than risked.
+    /// </summary>
+    private static string? OwnExePathOrNull()
+    {
+        var exe = Environment.ProcessPath;
+        var entry = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name;
+        return exe is not null && entry is not null
+               && string.Equals(Path.GetFileNameWithoutExtension(exe), entry, StringComparison.OrdinalIgnoreCase)
+            ? exe
+            : null;
+    }
+
+    /// <summary>
+    /// The download half of the update, served from a loopback socket so nothing here
+    /// touches the internet. The invariant under test: nothing unverified is ever
+    /// handed to the swap, and a rejected download leaves no staged file behind.
+    /// </summary>
+    private static void CheckDownloadAndVerify()
+    {
+        var exe = OwnExePathOrNull();
+        if (exe is null)
+        {
+            Skip("update download and checksum verification",
+                $"process is '{Environment.ProcessPath}', not this check program's own exe");
+            return;
+        }
+
+        var staged = exe + UpdateService.StagedSuffix;
+        var payload = Encoding.ASCII.GetBytes("NEW BINARY " + Guid.NewGuid());
+        var goodHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload)).ToLowerInvariant();
+
+        using var server = new LoopbackServer(new()
+        {
+            ["/LogLens.exe"] = payload,
+            ["/good/SHA256SUMS.txt"] = Encoding.ASCII.GetBytes($"{goodHash}  LogLens.exe\n"),
+            ["/bad/SHA256SUMS.txt"] = Encoding.ASCII.GetBytes($"{new string('f', 64)}  LogLens.exe\n"),
+            ["/other/SHA256SUMS.txt"] = Encoding.ASCII.GetBytes($"{goodHash}  Something.dll\n"),
+            ["/portal/SHA256SUMS.txt"] = Encoding.ASCII.GetBytes("<html><body>Please sign in</body></html>"),
+        });
+
+        UpdateInfo Release(string exePath, string? sumsPath) => new(
+            new Version(1, 0, 0), new Version(9, 9, 9), "v9.9.9", server.BaseUrl + "/release",
+            server.BaseUrl + exePath, payload.Length, sumsPath is null ? null : server.BaseUrl + sumsPath);
+
+        // Runs one download and reports how it ended: the staged path, or the failure.
+        (string? Staged, Exception? Error) Attempt(UpdateInfo info, IProgress<double>? progress = null)
+        {
+            try { File.Delete(staged); } catch { /* not there */ }
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            try { return (UpdateService.DownloadAndVerifyAsync(info, progress, cts.Token).GetAwaiter().GetResult(), null); }
+            catch (Exception ex) { return (null, ex); }
+        }
+
+        try
+        {
+            var progress = new LastProgress();
+            var good = Attempt(Release("/LogLens.exe", "/good/SHA256SUMS.txt"), progress);
+            Report(good.Error is null && good.Staged == staged && File.Exists(staged)
+                   && File.ReadAllBytes(staged).SequenceEqual(payload) && progress.Last == 1.0,
+                "a download matching its published checksum is staged beside the exe",
+                $"error={good.Error?.Message ?? "none"}, staged={good.Staged ?? "null"}, progress={progress.Last}");
+
+            var exeBefore = File.ReadAllBytes(exe);
+
+            var bad = Attempt(Release("/LogLens.exe", "/bad/SHA256SUMS.txt"));
+            Report(bad.Error is InvalidOperationException && bad.Error.Message.Contains("checksum does not match")
+                   && !File.Exists(staged),
+                "a checksum mismatch is refused and the staged download deleted",
+                $"error={bad.Error?.GetType().Name}: {bad.Error?.Message}, stagedLeft={File.Exists(staged)}");
+
+            // These three used to pass UNVERIFIED: verification was skipped whenever
+            // there was no expected hash to compare against.
+            var noSums = Attempt(Release("/LogLens.exe", null));
+            var noEntry = Attempt(Release("/LogLens.exe", "/other/SHA256SUMS.txt"));
+            var portal = Attempt(Release("/LogLens.exe", "/portal/SHA256SUMS.txt"));
+            Report(noSums.Error is InvalidOperationException && noEntry.Error is InvalidOperationException
+                   && portal.Error is InvalidOperationException && !File.Exists(staged),
+                "a release with no checksum, or none for LogLens.exe, is refused rather than installed unverified",
+                $"noSums={noSums.Error?.Message ?? "ACCEPTED"}; noEntry={noEntry.Error?.Message ?? "ACCEPTED"}; "
+                + $"portal={portal.Error?.Message ?? "ACCEPTED"}; stagedLeft={File.Exists(staged)}");
+
+            var missing = Attempt(Release("/missing/LogLens.exe", "/good/SHA256SUMS.txt"));
+            Report(missing.Error is not null && !File.Exists(staged),
+                "a failed download leaves no partial staged file behind",
+                $"error={missing.Error?.Message ?? "none"}, stagedLeft={File.Exists(staged)}");
+
+            Report(File.ReadAllBytes(exe).SequenceEqual(exeBefore),
+                "download and verification never touch the running exe", "the exe changed");
+        }
+        finally
+        {
+            try { File.Delete(staged); } catch { /* not there */ }
+        }
+    }
+
+    /// <summary>
+    /// Startup cleanup of what earlier swaps left behind, including the .old-&lt;ticks&gt;
+    /// variants PerformSwap steps aside to. It works on the running exe's folder,
+    /// so — like the download — it runs only against this program's own build output.
+    /// </summary>
+    private static void CheckLeftoverCleanup()
+    {
+        var exe = OwnExePathOrNull();
+        if (exe is null)
+        {
+            Skip("update leftover cleanup", $"process is '{Environment.ProcessPath}', not this check program's own exe");
+            return;
+        }
+
+        var dir = Path.GetDirectoryName(exe)!;
+        string[] leftovers =
+        [
+            exe + UpdateService.BackupSuffix,
+            exe + UpdateService.BackupSuffix + "-638912345678901234",
+            exe + UpdateService.StagedSuffix,
+        ];
+        // Same suffix, different exe: cleanup must stay scoped to its own name.
+        var bystander = Path.Combine(dir, "SomeOtherTool.exe" + UpdateService.BackupSuffix);
+
+        try
+        {
+            foreach (var f in leftovers) File.WriteAllText(f, "leftover");
+            File.WriteAllText(bystander, "not ours");
+
+            UpdateService.CleanUpLeftovers();
+
+            var survivors = leftovers.Where(File.Exists).Select(Path.GetFileName).ToList();
+            Report(survivors.Count == 0 && File.Exists(exe) && File.Exists(bystander),
+                "startup cleanup removes .old, .old-<ticks> and .update, and nothing else",
+                $"survivors=[{string.Join(", ", survivors)}], exe={File.Exists(exe)}, bystander={File.Exists(bystander)}");
+        }
+        finally
+        {
+            foreach (var f in leftovers) try { File.Delete(f); } catch { /* best effort */ }
+            try { File.Delete(bystander); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>
+    /// The successor's wait for its predecessor is bounded — a hung old instance must
+    /// delay startup, never prevent it — and is a no-op for a normal launch.
+    /// </summary>
+    private static void CheckWaitForPredecessor()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        UpdateService.WaitForPredecessor([]);
+        UpdateService.WaitForPredecessor(["--some-other-flag", "123"]);
+        UpdateService.WaitForPredecessor([UpdateService.UpdatedFromArg, "not-a-pid"]);
+        UpdateService.WaitForPredecessor([UpdateService.UpdatedFromArg, int.MaxValue.ToString()]);
+        var quick = sw.ElapsedMilliseconds;
+
+        Report(quick < 1000,
+            "a normal launch, a junk pid or an already-exited predecessor does not wait",
+            $"took {quick} ms");
+
+        // Our own process never exits during the call, so this is the hung-predecessor case.
+        sw.Restart();
+        UpdateService.WaitForPredecessor([UpdateService.UpdatedFromArg, Environment.ProcessId.ToString()], maxWaitMs: 300);
+        var bounded = sw.ElapsedMilliseconds;
+
+        Report(bounded >= 250 && bounded < 3000,
+            "waiting on a predecessor that never exits gives up at the bound",
+            $"took {bounded} ms for a 300 ms bound");
+    }
+
+    /// <summary>Records progress synchronously; Progress&lt;T&gt; would post it to the thread pool.</summary>
+    private sealed class LastProgress : IProgress<double>
+    {
+        public double Last { get; private set; }
+        public void Report(double value) => Last = value;
+    }
+
+    /// <summary>
+    /// A minimal HTTP/1.1 responder on a loopback port the OS picks, so the update
+    /// download can be exercised without the internet and without an HttpListener
+    /// URL reservation (http.sys can demand admin rights for one on Windows). Serves fixed
+    /// bodies by path; anything else is a 404.
+    /// </summary>
+    private sealed class LoopbackServer : IDisposable
+    {
+        private readonly System.Net.Sockets.TcpListener _listener = new(System.Net.IPAddress.Loopback, 0);
+        private readonly Dictionary<string, byte[]> _routes;
+        private readonly CancellationTokenSource _cts = new();
+
+        public string BaseUrl { get; }
+
+        public LoopbackServer(Dictionary<string, byte[]> routes)
+        {
+            _routes = routes;
+            _listener.Start();
+            BaseUrl = $"http://127.0.0.1:{((System.Net.IPEndPoint)_listener.LocalEndpoint).Port}";
+            _ = Task.Run(AcceptLoop);
+        }
+
+        private async Task AcceptLoop()
+        {
+            while (!_cts.IsCancellationRequested)
+            {
+                System.Net.Sockets.TcpClient client;
+                try { client = await _listener.AcceptTcpClientAsync(_cts.Token); }
+                catch { return; }
+                _ = Task.Run(() => Serve(client));
+            }
+        }
+
+        private async Task Serve(System.Net.Sockets.TcpClient client)
+        {
+            try
+            {
+                using (client)
+                {
+                    var stream = client.GetStream();
+                    var head = new StringBuilder();
+                    var buffer = new byte[4096];
+                    while (!head.ToString().Contains("\r\n\r\n"))
+                    {
+                        int n = await stream.ReadAsync(buffer, _cts.Token);
+                        if (n <= 0) return;
+                        head.Append(Encoding.ASCII.GetString(buffer, 0, n));
+                    }
+
+                    var target = head.ToString().Split(' ', 3)[1];
+                    bool found = _routes.TryGetValue(target, out var body);
+                    body ??= [];
+
+                    var header = $"HTTP/1.1 {(found ? "200 OK" : "404 Not Found")}\r\n"
+                                 + $"Content-Length: {body.Length}\r\n"
+                                 + "Content-Type: application/octet-stream\r\n"
+                                 + "Connection: close\r\n\r\n";
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes(header), _cts.Token);
+                    await stream.WriteAsync(body, _cts.Token);
+                }
+            }
+            catch { /* the client went away; nothing to report from here */ }
+        }
+
+        public void Dispose()
+        {
+            _cts.Cancel();
+            _listener.Stop();
+        }
+    }
+
     // ================= the tailer, against real files =================
 
     private static void CheckTailer()
@@ -1509,8 +2020,169 @@ internal static class Program
 
         CheckCrlfAcrossReadBoundary(dir);
         CheckTruncateAndRewrite(dir);
+        CheckMultiByteAcrossReadBoundary(dir);
+        CheckPartialLineHeldBack(dir);
+        CheckWildcardRoll(dir);
+        CheckRenameRotation(dir);
 
         try { Directory.Delete(dir, true); } catch { /* best effort */ }
+    }
+
+    /// <summary>
+    /// The decoder is kept across reads precisely so a multi-byte character cut in
+    /// half by the 64 KB chunking survives. Here the three bytes of "€" sit at offsets
+    /// 65535–65537: the first in one read, the other two in the next. A per-read
+    /// decoder would emit replacement characters on both sides of the cut.
+    /// </summary>
+    private static void CheckMultiByteAcrossReadBoundary(string dir)
+    {
+        var path = Path.Combine(dir, "utf8-boundary.log");
+        File.WriteAllText(path, new string('x', 65535) + "€\n" + "naïve café\n", new UTF8Encoding(false));
+
+        var lines = Collect(path, TimeSpan.FromSeconds(2), expected: 2, out var error);
+
+        bool ok = lines.Count == 2
+                  && lines[0].Length == 65536 && lines[0].EndsWith('€')
+                  && lines[1] == "naïve café"
+                  && !lines.Any(l => l.Contains('�'));
+
+        Report(ok, "a UTF-8 character split across the 64 KB read boundary decodes intact",
+            $"got {lines.Count} lines, first ends '{(lines.Count > 0 ? lines[0][^Math.Min(3, lines[0].Length)..] : "")}', "
+            + $"error={error ?? "none"}");
+    }
+
+    /// <summary>
+    /// A writer mid-flush leaves a line without its newline. Emitting it would show a
+    /// half line that then "changes" — so it must wait for the rest, and then arrive
+    /// as one line, not as the fragment plus the remainder.
+    /// </summary>
+    private static void CheckPartialLineHeldBack(string dir)
+    {
+        var path = Path.Combine(dir, "partial.log");
+        File.WriteAllText(path, "complete\npart", new UTF8Encoding(false));
+
+        var got = new List<string>();
+        var tailer = new LogTailer(path, 0);
+        tailer.Batch += b => { lock (got) got.AddRange(b.Lines); };
+        tailer.Start(40);
+
+        bool heldBack;
+        try
+        {
+            WaitFor(() => { lock (got) return got.Contains("complete"); }, TimeSpan.FromSeconds(2));
+
+            // Several polls with the fragment sitting there unfinished. A sleep is the
+            // honest tool here: the check is that something does NOT happen.
+            Thread.Sleep(300);
+            lock (got) heldBack = got.Count == 1;
+
+            File.AppendAllText(path, "ial\n");
+            WaitFor(() => { lock (got) return got.Count >= 2; }, TimeSpan.FromSeconds(2));
+        }
+        finally { tailer.Dispose(); }
+
+        List<string> snapshot;
+        lock (got) snapshot = got.ToList();
+
+        Report(heldBack && snapshot.SequenceEqual(["complete", "partial"]),
+            "a trailing partial line is held back until its newline arrives, then emitted whole",
+            $"heldBack={heldBack}, lines=[{string.Join(", ", snapshot)}]");
+    }
+
+    /// <summary>
+    /// A wildcard spec follows a rolling logger onto the newest file. The roll must
+    /// arrive as a Rewound batch — that is what tells the tab and the merged view to
+    /// drop the old file's lines — carrying only the new file's content.
+    /// </summary>
+    private static void CheckWildcardRoll(string dir)
+    {
+        var rollDir = Path.Combine(dir, "roll");
+        if (Directory.Exists(rollDir)) Directory.Delete(rollDir, true);   // a previous aborted run
+        Directory.CreateDirectory(rollDir);
+
+        var day1 = Path.Combine(rollDir, "app-20260814.log");
+        File.WriteAllText(day1, "old-1\nold-2\n");
+        // Newest-by-write-time decides the match; keep the clock's resolution out of it.
+        File.SetLastWriteTimeUtc(day1, DateTime.UtcNow.AddHours(-1));
+
+        var batches = new List<TailBatch>();
+        var tailer = new LogTailer(Path.Combine(rollDir, "app-*.log"), 0);
+        tailer.Batch += b => { lock (batches) batches.Add(b); };
+        tailer.Start(40);
+
+        try
+        {
+            WaitFor(() => { lock (batches) return batches.Any(b => b.Lines.Contains("old-2")); },
+                TimeSpan.FromSeconds(2));
+
+            // Written under a name the pattern ignores, then moved in, so the roll is
+            // seen with its content rather than as an empty file that fills later.
+            var staging = Path.Combine(rollDir, "app-20260815.tmp");
+            File.WriteAllText(staging, "new-1\nnew-2\n");
+            File.Move(staging, Path.Combine(rollDir, "app-20260815.log"));
+
+            WaitFor(() => { lock (batches) return batches.Any(b => b.Lines.Contains("new-2")); },
+                TimeSpan.FromSeconds(3));
+        }
+        finally { tailer.Dispose(); }
+
+        List<TailBatch> snapshot;
+        lock (batches) snapshot = batches.ToList();
+
+        int rollAt = snapshot.FindIndex(b => b.Rewound && Path.GetFileName(b.ResolvedPath) == "app-20260815.log");
+        var afterRoll = rollAt < 0 ? new List<string>() : snapshot.Skip(rollAt).SelectMany(b => b.Lines).ToList();
+
+        Report(rollAt >= 0 && afterRoll.SequenceEqual(["new-1", "new-2"]),
+            "a wildcard spec rolls onto the newer file with a Rewound batch of only its lines",
+            $"rewound batch at {rollAt}, lines after roll=[{string.Join(", ", afterRoll)}]");
+    }
+
+    /// <summary>
+    /// Rename-rotation (log4net RollingFileAppender, NLog archiving): the live file is
+    /// renamed away and a fresh one created at the same path. The tailer reopens the
+    /// path every poll, so it sees the new, shorter file and must start it from the
+    /// top instead of seeking past its end.
+    ///
+    /// Known limit, not checked here: with no file identity to compare, a new file
+    /// that has already grown PAST the old read position before the next poll is
+    /// read from that position as if it were the old file continuing.
+    /// </summary>
+    private static void CheckRenameRotation(string dir)
+    {
+        var path = Path.Combine(dir, "renamed.log");
+        File.Delete(path + ".1");   // a previous aborted run
+        File.WriteAllText(path, "before-1 padding padding padding\nbefore-2 padding padding padding\n");
+
+        var batches = new List<TailBatch>();
+        var tailer = new LogTailer(path, 0);
+        tailer.Batch += b => { lock (batches) batches.Add(b); };
+        tailer.Start(40);
+
+        string? lastError = null;
+        try
+        {
+            WaitFor(() => { lock (batches) return batches.Any(b => b.Lines.Any(l => l.StartsWith("before-2"))); },
+                TimeSpan.FromSeconds(2));
+
+            File.Move(path, path + ".1");
+            File.WriteAllText(path, "after-1\n");
+
+            WaitFor(() => { lock (batches) return batches.Any(b => b.Lines.Contains("after-1")); },
+                TimeSpan.FromSeconds(3));
+            lastError = tailer.LastError;
+        }
+        finally { tailer.Dispose(); }
+
+        List<TailBatch> snapshot;
+        lock (batches) snapshot = batches.ToList();
+
+        // The first batch is the initial read (also Rewound); look for the next one.
+        int rotatedAt = snapshot.Count < 2 ? -1 : snapshot.FindIndex(1, b => b.Rewound);
+        var afterRotation = rotatedAt < 0 ? new List<string>() : snapshot.Skip(rotatedAt).SelectMany(b => b.Lines).ToList();
+
+        Report(rotatedAt > 0 && afterRotation.SequenceEqual(["after-1"]) && lastError is null,
+            "a file renamed away and recreated at the same path is re-read from the top",
+            $"rewound at {rotatedAt}, lines after=[{string.Join(", ", afterRotation)}], lastError={lastError ?? "none"}");
     }
 
     /// <summary>
