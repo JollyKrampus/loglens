@@ -1107,6 +1107,51 @@ internal static class Program
         {
             try { File.Delete(path); } catch { }
         }
+
+        CheckWorkspaceLocation();
+    }
+
+    /// <summary>
+    /// Portable-first, except where "beside the exe" is a trap: a .app bundle, or a
+    /// package manager's versioned folder (Scoop puts each version in a new folder,
+    /// so a workspace written beside 1.5.3 is gone after an update to 1.5.4).
+    /// </summary>
+    private static void CheckWorkspaceLocation()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"loglens-location-{Guid.NewGuid():N}");
+        var app = Path.Combine(root, "app");
+        var roaming = Path.Combine(root, "roaming");
+        var bundle = Path.Combine(root, "LogLens.app", "Contents", "MacOS");
+        Directory.CreateDirectory(app);
+        Directory.CreateDirectory(roaming);
+        Directory.CreateDirectory(bundle);
+
+        try
+        {
+            var portable = Path.Combine(app, WorkspaceStore.FileName);
+            var roamed = Path.Combine(roaming, WorkspaceStore.FileName);
+
+            Report(WorkspaceStore.ResolveDefaultPath(app, roaming) == portable,
+                "a writable exe folder is the portable workspace location", WorkspaceStore.ResolveDefaultPath(app, roaming));
+
+            Report(WorkspaceStore.ResolveDefaultPath(bundle, roaming) == roamed,
+                "inside a .app bundle the workspace goes to the per-user folder", WorkspaceStore.ResolveDefaultPath(bundle, roaming));
+
+            File.WriteAllText(Path.Combine(app, WorkspaceStore.NotPortableMarker), "");
+            Report(WorkspaceStore.ResolveDefaultPath(app, roaming) == roamed,
+                "a package-managed install (marker beside the exe) uses the per-user folder",
+                WorkspaceStore.ResolveDefaultPath(app, roaming));
+
+            // Even a workspace already sitting beside a managed exe is ignored: under
+            // Scoop that folder is about to be replaced by the next version's.
+            File.WriteAllText(portable, "{}");
+            Report(WorkspaceStore.ResolveDefaultPath(app, roaming) == roamed,
+                "the marker outranks a workspace file beside the exe", WorkspaceStore.ResolveDefaultPath(app, roaming));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
     }
 
     // ================= legacy default-rule upgrade =================

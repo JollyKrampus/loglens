@@ -172,7 +172,14 @@ history — nearly every "Fix what the review confirmed" commit adds one.
      About box shows.
    - `LogLens.Core/LogLens.Core.csproj` (`<Version>`)
    - `LogLens.Avalonia/LogLens.Avalonia.csproj` (`<Version>`, `<InformationalVersion>`)
-2. `git tag -a v1.5.4 -m "what changed" && git push origin v1.5.4`
+2. Move `CHANGELOG.md`'s **Unreleased** section under the new version and date.
+3. `git tag -a v1.5.4 -m "what changed" && git push origin v1.5.4`
+4. Once the release exists, point the package manifests at it: `bucket/loglens.json`
+   (`version`, `url`, `hash` — Scoop's `checkver.ps1 -u` fills them from the
+   `autoupdate` block) and a new `packaging/winget/manifests/…/<version>/` folder
+   (`wingetcreate update JollyKrampus.LogLens -v <version> -u <exe url>` writes
+   it; submitting to `microsoft/winget-pkgs` is a manual PR). Hashes come from the
+   release's `SHA256SUMS.txt`, never from a local build.
 
 CI does the rest: three jobs — `build-windows` (always builds + runs checks; publishes
 the exe and `SHA256SUMS.txt` only on a tag or manual run), `build-macos` (tag/manual
@@ -328,9 +335,12 @@ a manual dispatch from a branch called `version-bump` would otherwise stamp
 
 ### macOS
 
-- A `.app` bundle is **not** a portable install. `WorkspaceStore.IsInsideMacBundle`
+- A `.app` bundle is **not** a portable install. `WorkspaceStore.ResolveDefaultPath`
   refuses to treat `Contents/MacOS` as the portable location; the workspace goes to
   `~/.config/LogLens/`. Writing inside the bundle would hide it and break signing.
+  The same rule covers a `loglens.not-portable` marker beside the exe, which the
+  Scoop manifest creates: Scoop gives each version a new folder, so a workspace
+  kept beside the exe was stranded on every `scoop update`.
 - Binaries are unsigned/un-notarised; users run `xattr -cr LogLens.app` once. The CI
   has a disabled codesign step ready for the day an Apple account exists.
 
@@ -365,7 +375,7 @@ a manual dispatch from a branch called `version-bump` would otherwise stamp
 
 | File | Location | Notes |
 |---|---|---|
-| `loglens.workspace.json` | beside the exe if writable, else `%APPDATA%\LogLens` (macOS: `~/.config/LogLens`) | views, rules, settings, per-pane chips/filters, window placement |
+| `loglens.workspace.json` | beside the exe if writable and no `loglens.not-portable` marker, else `%APPDATA%\LogLens` (macOS: `~/.config/LogLens`) | views, rules, settings, per-pane chips/filters, window placement |
 | `loglens.issues.db` | beside the workspace | SQLite, WAL mode; absent entirely if **Track issues** is off |
 | `loglens-errors.log` | `%TEMP%` | crash/handled-error log |
 | `LogLens.exe.old` | beside the exe | self-update leftover, deleted on next start |

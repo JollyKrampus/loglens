@@ -12,13 +12,27 @@ No installer, no service, no account, no telemetry, no licence.
 ## Releases
 
 Built binaries are on the [releases page](https://github.com/JollyKrampus/loglens/releases) —
-download `LogLens.exe` and run it. Nothing to install.
+download `LogLens.exe` and run it. Nothing to install. What changed in each version
+is in [CHANGELOG.md](CHANGELOG.md).
+
+Prefer a package manager? This repository is a [Scoop](https://scoop.sh) bucket:
+
+```powershell
+scoop bucket add loglens https://github.com/JollyKrampus/loglens
+scoop install loglens/loglens
+```
+
+A Scoop install is not a portable one — Scoop gives each version its own folder — so
+from 1.5.4 it keeps the workspace in `%APPDATA%\LogLens` and survives
+`scoop update loglens`. Update through Scoop rather than **Check for updates**, so
+Scoop knows which version you have. winget manifests are in `packaging/winget/`.
 
 ### Updating
 
 LogLens checks the releases page once, quietly, a few seconds after startup (turn
-this off in Settings). If something newer exists you get a status-bar note — nothing
-downloads without you asking. **Help ▸ Check for updates…** shows the update dialog:
+this off in Settings). If something newer exists the update dialog opens — nothing
+downloads without you asking, and being offline stays silent. **Help ▸ Check for
+updates…** opens the same dialog on demand:
 one click downloads the new exe, verifies it against the release's published SHA-256
 checksum, swaps it in place **right where the exe lives**, and restarts. Your
 workspace and issue database are untouched.
@@ -188,8 +202,9 @@ single `loglens.workspace.json`. You can keep several: one per project, one per
 incident, one you hand to a colleague. `File ▸ Save workspace as…`.
 
 **Where it's stored:** next to the .exe if that folder is writable (so the whole
-thing stays portable), otherwise `%APPDATA%\LogLens`. The status bar always shows
-the path in use.
+thing stays portable), otherwise `%APPDATA%\LogLens`. A file named
+`loglens.not-portable` beside the exe forces the `%APPDATA%` location — package
+managers create it, and you can too. The status bar always shows the path in use.
 
 ---
 
