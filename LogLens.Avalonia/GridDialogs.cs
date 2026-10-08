@@ -122,21 +122,49 @@ public sealed class IssuesWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         recorder.Flush();
-        var rows = recorder.Store.Query(limit: 2000);
 
         var grid = new DataGrid
         {
             AutoGenerateColumns = false,
             IsReadOnly = true,
-            ItemsSource = rows,
             Columns =
             {
                 new DataGridTextColumn { Header = "Sev", Binding = new global::Avalonia.Data.Binding(nameof(LogIssue.Severity)) },
                 new DataGridTextColumn { Header = "View", Binding = new global::Avalonia.Data.Binding(nameof(LogIssue.View)) },
+                new DataGridTextColumn { Header = "Application", Binding = new global::Avalonia.Data.Binding(nameof(LogIssue.Sources)) },
                 new DataGridTextColumn { Header = "Count", Binding = new global::Avalonia.Data.Binding(nameof(LogIssue.Count)) },
                 new DataGridTextColumn { Header = "Title", Width = new DataGridLength(1, DataGridLengthUnitType.Star), Binding = new global::Avalonia.Data.Binding(nameof(LogIssue.Title)) },
                 new DataGridTextColumn { Header = "Last seen", Binding = new global::Avalonia.Data.Binding(nameof(LogIssue.LastSeenLocal)) },
                 new DataGridTextColumn { Header = "Jira", Binding = new global::Avalonia.Data.Binding(nameof(LogIssue.JiraKey)) },
+            }
+        };
+
+        // Same application filter as the WPF window: each source file's tab name, with
+        // how many distinct issues it holds. Item 0 (null) is "all applications".
+        var tallies = recorder.Store.CountsBySource();
+        var sourceIds = new List<string?> { null };
+        var labels = new List<string> { "(all applications)" };
+        foreach (var t in tallies)
+        {
+            sourceIds.Add(t.Source);
+            labels.Add($"{t.Source} ({t.Issues:N0})");
+        }
+
+        var sourceFilter = new ComboBox { ItemsSource = labels, SelectedIndex = 0, MinWidth = 220 };
+        void Load() => grid.ItemsSource = recorder.Store.Query(
+            limit: 2000, source: sourceIds[Math.Max(0, sourceFilter.SelectedIndex)]);
+        sourceFilter.SelectionChanged += (_, __) => Load();
+        Load();
+
+        var filterBar = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(0, 0, 0, 10),
+            Children =
+            {
+                new TextBlock { Text = "Application", Foreground = Ui.Dim, VerticalAlignment = VerticalAlignment.Center },
+                sourceFilter
             }
         };
 
@@ -153,7 +181,9 @@ public sealed class IssuesWindow : Window
         var root = new DockPanel { Margin = new Thickness(14) };
         var buttons = Ui.Buttons(copy, close);
         DockPanel.SetDock(buttons, Dock.Bottom);
+        DockPanel.SetDock(filterBar, Dock.Top);
         root.Children.Add(buttons);
+        root.Children.Add(filterBar);
         root.Children.Add(grid);
 
         Content = root;

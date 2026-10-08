@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -41,6 +42,15 @@ public partial class IssuesWindow : Window
     private string? ViewScope =>
         ViewFilter.SelectedItem is string s && s != AllViews ? s : null;
 
+    /// <summary>One entry in the application dropdown; Source is null for "all".</summary>
+    private sealed record SourceChoice(string? Source, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    /// <summary>The selected application (source file) filter, or null for all.</summary>
+    private string? SourceScope => (SourceFilter.SelectedItem as SourceChoice)?.Source;
+
     private void Reload()
     {
         if (_loading) return;
@@ -56,9 +66,20 @@ public partial class IssuesWindow : Window
         _loading = true;
         ViewFilter.ItemsSource = items;
         ViewFilter.SelectedItem = items.Contains(keepView ?? "") ? keepView : AllViews;
+
+        // Applications are counted within the chosen view, so the numbers answer
+        // "which app is noisiest in Prod?" rather than mixing environments.
+        var tallies = _recorder.Store.CountsBySource(ShowIgnored.IsChecked == true, ViewScope);
+        var keepSource = SourceScope;
+        var sources = new List<SourceChoice> { new(null, "(all applications)") };
+        sources.AddRange(tallies.Select(t => new SourceChoice(t.Source, $"{t.Source} ({t.Issues:N0})")));
+        SourceFilter.ItemsSource = sources;
+        // A source that has no issues left in this view falls back to "all" rather
+        // than silently showing an empty list.
+        SourceFilter.SelectedItem = sources.FirstOrDefault(c => c.Source == keepSource) ?? sources[0];
         _loading = false;
 
-        var counts = _recorder.Store.CountsBySeverity(ShowIgnored.IsChecked == true, ViewScope);
+        var counts = _recorder.Store.CountsBySeverity(ShowIgnored.IsChecked == true, ViewScope, SourceScope);
         FatalFilter.Content = $"Fatal ({counts.GetValueOrDefault(Severity.Fatal)})";
         ErrorFilter.Content = $"Error ({counts.GetValueOrDefault(Severity.Error)})";
         WarnFilter.Content = $"Warn ({counts.GetValueOrDefault(Severity.Warn)})";
@@ -76,6 +97,7 @@ public partial class IssuesWindow : Window
             results.AddRange(_recorder.Store.Query(
                 severity: sev,
                 view: ViewScope,
+                source: SourceScope,
                 includeIgnored: ShowIgnored.IsChecked == true,
                 includeFiled: HideFiled.IsChecked != true,
                 search: search));
@@ -88,7 +110,12 @@ public partial class IssuesWindow : Window
             .ToList();
 
         var keepKey = Selected is { } sel ? (sel.Hash, sel.View) : default;
+
+        // Replacing ItemsSource throws away a column-header sort, so a refresh (or
+        // the auto-refresh after Ignore / a Jira key) would undo "sort by Application".
+        var keepSort = Grid.Items.SortDescriptions.ToList();
         Grid.ItemsSource = _rows;
+        RestoreSort(keepSort);
 
         if (keepKey != default)
             Grid.SelectedItem = _rows.FirstOrDefault(i => (i.Hash, i.View) == keepKey);
@@ -99,6 +126,19 @@ public partial class IssuesWindow : Window
             : $"{_rows.Count:N0} distinct issue(s) · {total:N0} total occurrence(s) · {_recorder.Store.DatabasePath}";
 
         ShowDetail(Selected);
+    }
+
+    private void RestoreSort(List<SortDescription> sort)
+    {
+        if (sort.Count == 0) return;
+
+        foreach (var d in sort) Grid.Items.SortDescriptions.Add(d);
+
+        foreach (var column in Grid.Columns)
+        {
+            var match = sort.FirstOrDefault(d => d.PropertyName == column.SortMemberPath);
+            column.SortDirection = match.PropertyName is null ? null : match.Direction;
+        }
     }
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => Reload();
@@ -122,7 +162,7 @@ public partial class IssuesWindow : Window
         facts.Append($"{issue.Severity} · seen {issue.Count:N0} time(s)\n");
         facts.Append($"First {issue.FirstSeenLocal:yyyy-MM-dd HH:mm:ss}   Last {issue.LastSeenLocal:yyyy-MM-dd HH:mm:ss}\n");
         if (!string.IsNullOrWhiteSpace(issue.View)) facts.Append($"View: {issue.View}\n");
-        if (!string.IsNullOrWhiteSpace(issue.Sources)) facts.Append($"Files: {issue.Sources}\n");
+        if (!string.IsNullOrWhiteSpace(issue.Sources)) facts.Append($"Application: {string.Join(", ", issue.SourceList)}\n");
         if (!string.IsNullOrWhiteSpace(issue.ExceptionType)) facts.Append($"Exception: {issue.ExceptionType}\n");
         if (!string.IsNullOrWhiteSpace(issue.FaultingMethod)) facts.Append($"Method: {issue.FaultingMethod}\n");
         DetailFacts.Text = facts.ToString().TrimEnd();
