@@ -38,6 +38,13 @@ public sealed class LogIssue
     /// <summary>Comma-separated file names this has been seen in, within its view.</summary>
     public string Sources { get; set; } = "";
 
+    /// <summary>
+    /// <see cref="Sources"/> as a list. Each source is a log file's name as its tab
+    /// shows it — which, for most setups, is the application or service that wrote it.
+    /// </summary>
+    public IReadOnlyList<string> SourceList =>
+        Sources.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     /// <summary>Set once you've raised the ticket, so it stops looking new.</summary>
     public string? JiraKey { get; set; }
     public string? Notes { get; set; }
@@ -47,6 +54,12 @@ public sealed class LogIssue
     public DateTime LastSeenLocal => DateTime.SpecifyKind(LastSeenUtc, DateTimeKind.Utc).ToLocalTime();
     public bool IsFiled => !string.IsNullOrWhiteSpace(JiraKey);
 }
+
+/// <summary>
+/// How many distinct issues one source (application) holds, for the Issues window's
+/// application filter.
+/// </summary>
+public sealed record SourceTally(string Source, int Issues);
 
 /// <summary>A single sighting, queued for the background writer.</summary>
 public sealed record IssueOccurrence(
@@ -296,6 +309,12 @@ public sealed class IssueStore : IDisposable
     /// <summary>Commas are the list separator, so they cannot appear inside a value.</summary>
     private static string Clean(string s) => (s ?? "").Replace(',', ' ').Trim();
 
+    /// <summary>
+    /// Matches a whole entry in the comma-separated sources column — the same
+    /// fenced <c>instr</c> the upsert uses, so "api.log" never matches "old-api.log".
+    /// </summary>
+    private const string SourceMatchSql = "instr(',' || sources || ',', ',' || $source || ',') > 0";
+
     /// <summary>Every view name that has recorded at least one issue.</summary>
     public List<string> DistinctViews()
     {
@@ -314,7 +333,7 @@ public sealed class IssueStore : IDisposable
 
     public List<LogIssue> Query(Severity? severity = null, string? view = null,
                                 bool includeIgnored = false, bool includeFiled = true,
-                                string? search = null, int limit = 2000)
+                                string? search = null, int limit = 2000, string? source = null)
     {
         lock (_gate)
         {
@@ -324,6 +343,7 @@ public sealed class IssueStore : IDisposable
             var where = new List<string>();
             if (severity is not null) where.Add("severity = $sev");
             if (view is not null) where.Add("view = $view");
+            if (source is not null) where.Add(SourceMatchSql);
             if (!includeIgnored) where.Add("ignored = 0");
             if (!includeFiled) where.Add("(jira_key IS NULL OR jira_key = '')");
             if (!string.IsNullOrWhiteSpace(search)) where.Add("(title LIKE $q OR signature LIKE $q OR sample_line LIKE $q)");
@@ -339,6 +359,7 @@ public sealed class IssueStore : IDisposable
 
             if (severity is not null) cmd.Parameters.AddWithValue("$sev", (int)severity);
             if (view is not null) cmd.Parameters.AddWithValue("$view", view);
+            if (source is not null) cmd.Parameters.AddWithValue("$source", source);
             if (!string.IsNullOrWhiteSpace(search)) cmd.Parameters.AddWithValue("$q", "%" + search.Trim() + "%");
             cmd.Parameters.AddWithValue("$limit", limit);
 
@@ -412,8 +433,40 @@ public sealed class IssueStore : IDisposable
         }
     }
 
-    /// <summary>Distinct-issue counts per severity, optionally within one view.</summary>
-    public Dictionary<Severity, int> CountsBySeverity(bool includeIgnored = false, string? view = null)
+    /// <summary>Distinct-issue counts per severity, optionally within one view and/or source.</summary>
+    public Dictionary<Severity, int> CountsBySeverity(bool includeIgnored = false, string? view = null,
+                                                      string? source = null)
+    {
+        lock (_gate)
+        {
+            using var c = Open();
+            using var cmd = c.CreateCommand();
+
+            var where = new List<string>();
+            if (!includeIgnored) where.Add("ignored = 0");
+            if (view is not null) { where.Add("view = $view"); cmd.Parameters.AddWithValue("$view", view); }
+            if (source is not null) { where.Add(SourceMatchSql); cmd.Parameters.AddWithValue("$source", source); }
+
+            cmd.CommandText = "SELECT severity, COUNT(*) FROM issues "
+                              + (where.Count > 0 ? "WHERE " + string.Join(" AND ", where) + " " : "")
+                              + "GROUP BY severity";
+
+            var result = new Dictionary<Severity, int>();
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) result[(Severity)r.GetInt32(0)] = r.GetInt32(1);
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Distinct issues per source, optionally within one view, busiest first.
+    ///
+    /// Counted in C# rather than SQL because sources is a comma-separated set, not a
+    /// child table — and deliberately counts issues, not occurrences: a row only
+    /// knows its total count, not how it splits across the files it was seen in, so
+    /// a per-source occurrence total would silently double-count shared faults.
+    /// </summary>
+    public List<SourceTally> CountsBySource(bool includeIgnored = false, string? view = null)
     {
         lock (_gate)
         {
@@ -424,14 +477,27 @@ public sealed class IssueStore : IDisposable
             if (!includeIgnored) where.Add("ignored = 0");
             if (view is not null) { where.Add("view = $view"); cmd.Parameters.AddWithValue("$view", view); }
 
-            cmd.CommandText = "SELECT severity, COUNT(*) FROM issues "
-                              + (where.Count > 0 ? "WHERE " + string.Join(" AND ", where) + " " : "")
-                              + "GROUP BY severity";
+            cmd.CommandText = "SELECT sources FROM issues "
+                              + (where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "");
 
-            var result = new Dictionary<Severity, int>();
-            using var r = cmd.ExecuteReader();
-            while (r.Read()) result[(Severity)r.GetInt32(0)] = r.GetInt32(1);
-            return result;
+            var tally = new Dictionary<string, int>(StringComparer.Ordinal);
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    // Defensive: a source listed twice in one row still counts the issue once.
+                    foreach (var source in r.GetString(0)
+                                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                 .Distinct(StringComparer.Ordinal))
+                        tally[source] = tally.GetValueOrDefault(source) + 1;
+                }
+            }
+
+            return tally
+                .Select(kv => new SourceTally(kv.Key, kv.Value))
+                .OrderByDescending(t => t.Issues)
+                .ThenBy(t => t.Source, StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
     }
 

@@ -812,6 +812,49 @@ internal static class Program
                     "a re-observed issue adopts the newest severity classification",
                     $"severity={reclassified?.Severity} count={reclassified?.Count}");
 
+                // Application (source file) filter and per-application counts, in
+                // their own view so they cannot disturb the fixtures above. One
+                // fault seen in two apps is ONE row listing both, so it must count
+                // once for each app — and "orders-api.log" must not match the
+                // look-alike "old-orders-api.log".
+                var shared = SignatureBuilder.Build("ERROR Db Deadlock on table orders");
+                var lookalike = SignatureBuilder.Build("ERROR Db Connection refused");
+                var warnOnly = SignatureBuilder.Build("WARN Http Slow response 900ms");
+                store.Record([
+                    new IssueOccurrence(shared, Severity.Error, "ERROR Db Deadlock on table orders", null, "Stage", "orders-api.log", now),
+                    new IssueOccurrence(shared, Severity.Error, "ERROR Db Deadlock on table orders", null, "Stage", "billing.log", now.AddSeconds(1)),
+                    new IssueOccurrence(lookalike, Severity.Error, "ERROR Db Connection refused", null, "Stage", "old-orders-api.log", now.AddSeconds(2)),
+                    new IssueOccurrence(warnOnly, Severity.Warn, "WARN Http Slow response 900ms", null, "Stage", "orders-api.log", now.AddSeconds(3)),
+                ]);
+
+                var ordersRows = store.Query(view: "Stage", source: "orders-api.log");
+                Report(ordersRows.Count == 2 && ordersRows.All(i => i.SourceList.Contains("orders-api.log")),
+                    "filtering by application matches whole source names, not substrings",
+                    $"rows={ordersRows.Count} [{string.Join("; ", ordersRows.Select(i => i.Sources))}]");
+
+                var sharedRow = ordersRows.FirstOrDefault(i => i.Hash == shared.Hash);
+                Report(sharedRow is not null && sharedRow.SourceList.SequenceEqual(["orders-api.log", "billing.log"]),
+                    "an issue seen in two applications lists both",
+                    $"sources='{sharedRow?.Sources}'");
+
+                var tallies = store.CountsBySource(view: "Stage");
+                int TallyOf(string src) => tallies.FirstOrDefault(t => t.Source == src)?.Issues ?? -1;
+                Report(tallies.Count == 3 && tallies[0].Source == "orders-api.log"
+                       && TallyOf("orders-api.log") == 2 && TallyOf("billing.log") == 1
+                       && TallyOf("old-orders-api.log") == 1,
+                    "per-application counts are distinct issues, busiest application first",
+                    $"got [{string.Join(", ", tallies.Select(t => $"{t.Source}={t.Issues}"))}]");
+
+                var billingSev = store.CountsBySeverity(view: "Stage", source: "billing.log");
+                Report(billingSev.GetValueOrDefault(Severity.Error) == 1 && billingSev.GetValueOrDefault(Severity.Warn) == 0,
+                    "severity counts can be scoped to one application",
+                    $"error={billingSev.GetValueOrDefault(Severity.Error)}, warn={billingSev.GetValueOrDefault(Severity.Warn)}");
+
+                store.SetIgnored(warnOnly.Hash, "Stage", true);
+                Report(store.CountsBySource(view: "Stage").First(t => t.Source == "orders-api.log").Issues == 1
+                       && store.CountsBySource(includeIgnored: true, view: "Stage").First(t => t.Source == "orders-api.log").Issues == 2,
+                    "per-application counts honour the ignore flag like every other count", "");
+
                 // The generated ticket must contain the facts that make it useful.
                 var fatal = store.Query(Severity.Fatal)[0];
                 var ticket = JiraTemplate.Full(fatal, "PLAT");

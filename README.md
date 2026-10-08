@@ -292,6 +292,14 @@ a count of ten thousand — not ten thousand rows.
 The window is organised by **Fatal / Error / Warn**, each filter showing how many
 distinct issues it holds, sorted by severity then by how often each one fires.
 
+The **Application** dropdown narrows the list to one log file — named as its tab is,
+so rename a source in the view editor (`Orders API` rather than `app-2026.log`) and
+that's what you'll see here. Each entry shows how many distinct issues that
+application holds in the selected view, busiest first, so "which service is
+noisiest in Prod?" is one click. Click any column header — **Application** included —
+to sort by it; the sort survives refreshes. A fault seen in two applications is still
+one issue and counts once for each.
+
 ### How grouping works, without AI
 
 Occurrences are matched on a normalised signature. Everything that varies per
