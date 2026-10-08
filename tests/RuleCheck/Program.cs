@@ -245,6 +245,7 @@ internal static class Program
         CheckAlerts();
         CheckSounds();
         CheckSeverityChips();
+        CheckFind();
         CheckWorkspaceCompat();
         CheckLegacyRuleUpgrade();
         CheckContinuationSemantics();
@@ -590,65 +591,67 @@ internal static class Program
         var fatalBatch = new[] { L("dead FATAL", fatalRule) };
         var quietBatch = new[] { L("all fine INFO", null) };
 
-        // Fresh service per case so throttling from one doesn't leak into the next.
-        AlertService New(Action<AlertSettings>? tweak = null)
+        // Fresh policy per case so throttling from one doesn't leak into the next.
+        // The decision lives in LogLens.Core (AlertPolicy) and is shared by the WPF
+        // and macOS shells, so these checks need neither.
+        AlertPolicy New(Action<AlertSettings>? tweak = null)
         {
             var s = new AlertSettings { ThrottleSeconds = 0 };
             tweak?.Invoke(s);
-            return new AlertService(s);
+            return new AlertPolicy(s);
         }
 
         Outcome(New(), false, "Prod", true, errorBatch,
-            AlertService.AlertOutcome.Alerted, "an ERROR alerts");
+            AlertOutcome.Alerted, "an ERROR alerts");
 
         Outcome(New(), false, "Prod", true, fatalBatch,
-            AlertService.AlertOutcome.Alerted, "a FATAL alerts");
+            AlertOutcome.Alerted, "a FATAL alerts");
 
         Outcome(New(), false, "Prod", true, warnBatch,
-            AlertService.AlertOutcome.NothingMatched, "a WARN does not alert at the default Error threshold");
+            AlertOutcome.NothingMatched, "a WARN does not alert at the default Error threshold");
 
         Outcome(New(s => s.MinimumSeverity = Severity.Warn), false, "Prod", true, warnBatch,
-            AlertService.AlertOutcome.Alerted, "a WARN alerts once the threshold is lowered");
+            AlertOutcome.Alerted, "a WARN alerts once the threshold is lowered");
 
         Outcome(New(), false, "Prod", true, quietBatch,
-            AlertService.AlertOutcome.NothingMatched, "a clean batch does not alert");
+            AlertOutcome.NothingMatched, "a clean batch does not alert");
 
         Outcome(New(s => s.Enabled = false), false, "Prod", true, errorBatch,
-            AlertService.AlertOutcome.Disabled, "alerts off globally suppresses everything");
+            AlertOutcome.Disabled, "alerts off globally suppresses everything");
 
         Outcome(New(), false, "Dev", false, errorBatch,
-            AlertService.AlertOutcome.ViewMuted, "a muted view stays quiet");
+            AlertOutcome.ViewMuted, "a muted view stays quiet");
 
         Outcome(New(), true, "Prod", true, errorBatch,
-            AlertService.AlertOutcome.AppInForeground, "no alert while you are looking at the app");
+            AlertOutcome.AppInForeground, "no alert while you are looking at the app");
 
         Outcome(New(s => s.OnlyWhenUnfocused = false), true, "Prod", true, errorBatch,
-            AlertService.AlertOutcome.Alerted, "unless that check is turned off");
+            AlertOutcome.Alerted, "unless that check is turned off");
 
         // Custom pattern fires regardless of severity.
         Outcome(New(s => s.CustomPattern = "ORDER-9[0-9]{3}"), false, "Prod", true,
             new[] { L("INFO reconciled ORDER-9042", null) },
-            AlertService.AlertOutcome.Alerted, "a custom pattern alerts on an INFO line");
+            AlertOutcome.Alerted, "a custom pattern alerts on an INFO line");
 
         Outcome(New(s => s.CustomPattern = "ORDER-9[0-9]{3}"), false, "Prod", true,
             new[] { L("INFO reconciled ORDER-1042", null) },
-            AlertService.AlertOutcome.NothingMatched, "a custom pattern that misses stays quiet");
+            AlertOutcome.NothingMatched, "a custom pattern that misses stays quiet");
 
         // An invalid custom regex must be inert, never fatal.
         Outcome(New(s => s.CustomPattern = "([unclosed"), false, "Prod", true, quietBatch,
-            AlertService.AlertOutcome.NothingMatched, "an invalid custom pattern is inert, not a crash");
+            AlertOutcome.NothingMatched, "an invalid custom pattern is inert, not a crash");
 
         // Throttling: the second batch inside the window is suppressed.
         var throttled = New(s => s.ThrottleSeconds = 60);
         var first = throttled.Decide(false, "Prod", true, errorBatch, out _, out _);
         var second = throttled.Decide(false, "Prod", true, errorBatch, out _, out _);
-        Report(first == AlertService.AlertOutcome.Alerted && second == AlertService.AlertOutcome.Throttled,
+        Report(first == AlertOutcome.Alerted && second == AlertOutcome.Throttled,
             "a log storm produces one alert, not thousands",
             $"first={first}, second={second}");
 
         // ...but a different view has its own budget.
         var other = throttled.Decide(false, "Test", true, errorBatch, out _, out _);
-        Report(other == AlertService.AlertOutcome.Alerted,
+        Report(other == AlertOutcome.Alerted,
             "throttling is per view, so prod does not silence test",
             $"got {other}");
 
@@ -660,15 +663,117 @@ internal static class Program
         Report(n == 2 && trigger?.Text == "a ERROR",
             "the alert counts every match and reports the first",
             $"count={n}, trigger='{trigger?.Text}'");
+
+        // Both shells word the notification through AlertPolicy, so a Windows balloon
+        // and a macOS notification for the same batch say the same thing.
+        var one = AlertPolicy.Title("Prod", L("x ERROR", errorRule), 1);
+        var many = AlertPolicy.Title("Prod", L("x FATAL", fatalRule), 3);
+        Report(one == "Prod — error" && many == "Prod — 3 new fatals",
+            "the alert title names the view, the level and the count",
+            $"one='{one}', many='{many}'");
+
+        var longLine = L(new string('x', 500) + " ERROR", errorRule);
+        var body = AlertPolicy.Body(longLine);
+        Report(body.Length == 221 && body.EndsWith('…'),
+            "a huge line is capped in the notification body",
+            $"length={body.Length}");
+
+        // The macOS sounds are their own fields, so a Mac teammate's choice never
+        // overwrites the Windows one in a shared workspace.
+        var macSettings = new AlertSettings();
+        Report(macSettings.MacSoundFor(Severity.Error) == "Glass"
+               && macSettings.MacSoundFor(Severity.Fatal) == "Basso"
+               && macSettings.SoundFor(Severity.Error) == "Windows Notify.wav",
+            "macOS sounds default separately from the Windows ones",
+            $"mac={macSettings.MacSoundFor(Severity.Error)}/{macSettings.MacSoundFor(Severity.Fatal)}");
+
+        macSettings.UseDistinctFatalSound = false;
+        Report(macSettings.MacSoundFor(Severity.Fatal) == "Glass",
+            "turning off the distinct FATAL sound applies on macOS too",
+            $"got {macSettings.MacSoundFor(Severity.Fatal)}");
     }
 
-    private static void Outcome(AlertService svc, bool inForeground, string view, bool viewEnabled,
+    private static void Outcome(AlertPolicy policy, bool inForeground, string view, bool viewEnabled,
                                 IReadOnlyList<LogLine> lines,
-                                AlertService.AlertOutcome expected, string what)
+                                AlertOutcome expected, string what)
     {
-        var actual = svc.Decide(inForeground, view, viewEnabled, lines, out _, out _);
+        var actual = policy.Decide(inForeground, view, viewEnabled, lines, out _, out _);
         Report(actual == expected, what, $"expected {expected}, got {actual}");
-        svc.Dispose();
+    }
+
+    // ================= find in tab =================
+
+    /// <summary>
+    /// LineFinder is the find bar's logic, shared by the WPF and macOS shells.
+    /// Stepping starts from the selection, not the last hit, and wraps both ways.
+    /// </summary>
+    private static void CheckFind()
+    {
+        Section("Find in tab");
+
+        var lines = new[]
+        {
+            new LogLine(1, "INFO starting", null),
+            new LogLine(2, "ERROR Timeout calling payments", null),
+            new LogLine(3, "INFO payments healthy", null),
+            new LogLine(4, "WARN Payments slow", null),
+            new LogLine(5, "INFO done", null),
+        };
+
+        var f = new LineFinder();
+
+        f.Search(lines, "payments", isRegex: false, matchCase: false);
+        Report(f.Hits.SequenceEqual(new[] { 1, 2, 3 }) && f.Status == "3 matches",
+            "plain find is case-insensitive by default",
+            $"hits=[{string.Join(",", f.Hits)}] status='{f.Status}'");
+
+        f.Search(lines, "Payments", isRegex: false, matchCase: true);
+        Report(f.Hits.SequenceEqual(new[] { 3 }),
+            "match case narrows to the exact casing",
+            $"hits=[{string.Join(",", f.Hits)}]");
+
+        f.Search(lines, "^(ERROR|WARN)\\b", isRegex: true, matchCase: false);
+        Report(f.Hits.SequenceEqual(new[] { 1, 3 }),
+            "regex find matches per line",
+            $"hits=[{string.Join(",", f.Hits)}]");
+
+        f.Search(lines, "([unclosed", isRegex: true, matchCase: false);
+        Report(f.Hits.Count == 0 && f.Status.Length > 0 && f.Status != "no matches",
+            "an invalid find regex reports why instead of throwing",
+            $"status='{f.Status}'");
+
+        f.Search(lines, "nowhere", isRegex: false, matchCase: false);
+        Report(f.Hits.Count == 0 && f.Status == "no matches",
+            "a miss says so", $"status='{f.Status}'");
+
+        var g = new LineFinder();
+        int a = g.Step(lines, "payments", false, false, currentIndex: -1, direction: +1);
+        int b = g.Step(lines, "payments", false, false, currentIndex: a, direction: +1);
+        Report(a == 1 && b == 2 && g.Status == "2 of 3",
+            "next steps forward from the selection",
+            $"a={a} b={b} status='{g.Status}'");
+
+        int wrapDown = g.Step(lines, "payments", false, false, currentIndex: 3, direction: +1);
+        int wrapUp = g.Step(lines, "payments", false, false, currentIndex: 1, direction: -1);
+        Report(wrapDown == 1 && wrapUp == 3,
+            "next wraps to the top and previous wraps to the bottom",
+            $"down={wrapDown} up={wrapUp}");
+
+        // Stepping from a selection between hits goes to the neighbouring hit, not
+        // the next one after wherever the last jump landed.
+        int fromMiddle = g.Step(lines, "payments", false, false, currentIndex: 4, direction: -1);
+        Report(fromMiddle == 3, "previous steps back from the selection",
+            $"got {fromMiddle}");
+
+        // New lines arriving change the count, which must force a re-scan.
+        var grown = lines.Append(new LogLine(6, "ERROR payments down", null)).ToArray();
+        int afterGrowth = g.Step(grown, "payments", false, false, currentIndex: 3, direction: +1);
+        Report(afterGrowth == 5 && g.Status == "4 of 4",
+            "new lines are found without retyping the term",
+            $"got {afterGrowth} status='{g.Status}'");
+
+        Report(g.Step(lines, "", false, false, 0, +1) == -1,
+            "an empty term finds nothing", "expected -1");
     }
 
     // ================= severity chips =================
@@ -1330,6 +1435,10 @@ internal static class Program
                 "alert settings survive, sound choice included",
                 $"pattern={ws.Alerts.CustomPattern} sound={ws.Alerts.SoundName}");
 
+            Report(ws.Alerts.MacSoundName == "Glass" && ws.Alerts.MacFatalSoundName == "Basso",
+                "a workspace from before macOS alerts gets the default Mac sounds",
+                $"mac={ws.Alerts.MacSoundName}/{ws.Alerts.MacFatalSoundName}");
+
             Report(ws.Views.Count == 1 && ws.Views[0].Name == "Prod"
                    && ws.Views[0].ShowMergedTimeline && ws.Views[0].Sources.Count == 1
                    && ws.Views[0].Sources[0].Path == @"C:\logs\app-*.log"
@@ -1358,6 +1467,7 @@ internal static class Program
             pane.FilterIsRegex = true;
             ws.Views[0].MergedPane.ShowWarn = false;
             ws.Settings.AutoSaveWorkspace = false;
+            ws.Alerts.MacSoundName = "Ping";
 
             // Round-trip: what this version saves must itself reload.
             WorkspaceStore.Save(ws, path);
@@ -1370,8 +1480,10 @@ internal static class Program
             Report(!paneAgain.ShowInfo && !paneAgain.ShowDebug && paneAgain.ShowError
                    && paneAgain.Include == "payment" && paneAgain.FilterIsRegex
                    && !again.Views[0].MergedPane.ShowWarn
-                   && !again.Settings.AutoSaveWorkspace,
-                "severity chips, filters and auto-save round-trip through the workspace file",
+                   && !again.Settings.AutoSaveWorkspace
+                   && again.Alerts.MacSoundName == "Ping"
+                   && again.Alerts.SoundName == "Windows Notify.wav",
+                "severity chips, filters, auto-save and both platforms' sounds round-trip through the workspace file",
                 $"info={paneAgain.ShowInfo} include='{paneAgain.Include}' mergedWarn={again.Views[0].MergedPane.ShowWarn}");
         }
         finally

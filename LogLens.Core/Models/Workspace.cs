@@ -131,6 +131,8 @@ public sealed class AlertSettings : ObservableObject
     private string _soundName = "Windows Notify.wav";
     private string _fatalSoundName = "Windows Critical Stop.wav";
     private bool _useDistinctFatalSound = true;
+    private string _macSoundName = "Glass";
+    private string _macFatalSoundName = "Basso";
     private bool _flashTaskbar = true;
     private bool _onlyWhenUnfocused = true;
     private int _throttleSeconds = 15;
@@ -164,6 +166,23 @@ public sealed class AlertSettings : ObservableObject
     /// <summary>The sound actually used for a given severity.</summary>
     public string SoundFor(Severity severity)
         => severity == Severity.Fatal && UseDistinctFatalSound ? FatalSoundName : SoundName;
+
+    // The macOS app's sounds are separate fields rather than a reinterpretation of
+    // SoundName, because one workspace is shared between teammates on both
+    // platforms: a Mac user picking "Glass" must not overwrite the Windows user's
+    // "Windows Notify.wav", and vice versa. Additive with defaults, so a workspace
+    // written before these existed loads unchanged and older versions ignore them.
+
+    /// <summary>macOS system sound name (a file in /System/Library/Sounds, no extension).</summary>
+    public string MacSoundName { get => _macSoundName; set => Set(ref _macSoundName, value); }
+
+    /// <summary>macOS counterpart of <see cref="FatalSoundName"/>.</summary>
+    public string MacFatalSoundName { get => _macFatalSoundName; set => Set(ref _macFatalSoundName, value); }
+
+    /// <summary>The macOS sound actually used for a given severity.</summary>
+    public string MacSoundFor(Severity severity)
+        => severity == Severity.Fatal && UseDistinctFatalSound ? MacFatalSoundName : MacSoundName;
+
     public bool FlashTaskbar { get => _flashTaskbar; set => Set(ref _flashTaskbar, value); }
 
     /// <summary>No point shouting at you about a line you are already looking at.</summary>

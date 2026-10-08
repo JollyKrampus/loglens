@@ -6,11 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!--
-      The checks exercise AlertService (tray balloon, taskbar flash, throttling) and
-      SoundLibrary, which are Windows-only and live in the WPF app — hence the project
-      reference below and the matching WPF/WinForms surface here. HighlightRule, which
-      an earlier version of this comment blamed, lives in LogLens.Core and carries hex
-      strings rather than brushes; it needs neither.
+      The checks exercise SoundLibrary (Windows\Media .wav resolution), which is
+      Windows-only and lives in the WPF app — hence the project reference below and the
+      matching WPF/WinForms surface here. Everything else they touch is in LogLens.Core:
+      the alert decision moved there as AlertPolicy when macOS gained alerts, and
+      HighlightRule, which an earlier version of this comment blamed, carries hex
+      strings rather than brushes.
     -->
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
