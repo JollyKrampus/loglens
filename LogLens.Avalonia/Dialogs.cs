@@ -223,3 +223,166 @@ public sealed class SettingsWindow : Window
         return cb;
     }
 }
+
+/// <summary>
+/// The Alerts dialog: the WPF one's options, minus what has no meaning here. The
+/// taskbar flash has no macOS counterpart we can reach without native code, so it
+/// is not offered; the sound pickers list macOS system sounds and write the Mac-only
+/// fields, leaving a teammate's Windows sound choice in the shared workspace alone.
+/// Edits apply live, as in the WPF dialog — nothing here warrants a Cancel.
+/// </summary>
+public sealed class AlertsWindow : Window
+{
+    private static readonly Severity[] Levels = [Severity.Warn, Severity.Error, Severity.Fatal];
+
+    public AlertsWindow(AlertSettings settings, DesktopAlerts alerts)
+    {
+        Title = "Alerts";
+        Width = 560;
+        SizeToContent = SizeToContent.Height;
+        Background = Ui.Bg;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        CanResize = false;
+
+        var enabled = Check("Alert me when errors arrive", settings.Enabled, v => settings.Enabled = v);
+        enabled.FontWeight = FontWeight.SemiBold;
+
+        // Only the levels that make sense as a threshold — same list as the WPF dialog.
+        var level = new ComboBox
+        {
+            ItemsSource = Levels,
+            SelectedItem = Levels.Contains(settings.MinimumSeverity) ? settings.MinimumSeverity : Severity.Error,
+            Width = 140
+        };
+        level.SelectionChanged += (_, __) =>
+        {
+            if (level.SelectedItem is Severity s) settings.MinimumSeverity = s;
+        };
+
+        var pattern = new TextBox
+        {
+            Text = settings.CustomPattern,
+            FontFamily = new FontFamily("Menlo,Consolas,DejaVu Sans Mono,monospace")
+        };
+        pattern.LostFocus += (_, __) => settings.CustomPattern = pattern.Text ?? "";
+
+        var throttle = new TextBox
+        {
+            Text = settings.ThrottleSeconds.ToString(),
+            Width = 90,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        throttle.LostFocus += (_, __) =>
+        {
+            if (int.TryParse(throttle.Text, out var v)) settings.ThrottleSeconds = v;
+            throttle.Text = settings.ThrottleSeconds.ToString();
+        };
+
+        var unfocused = Check("Only when LogLens is not the active window",
+            settings.OnlyWhenUnfocused, v => settings.OnlyWhenUnfocused = v);
+
+        var toast = Check(OperatingSystem.IsLinux()
+                ? "Show a notification (needs notify-send)"
+                : "Show a notification",
+            settings.ShowToast, v => settings.ShowToast = v);
+
+        var panel = new StackPanel();
+        panel.Children.Add(enabled);
+        panel.Children.Add(Hint("Each view can be muted separately under the Alerts menu, so you can watch prod without dev shouting at you."));
+
+        panel.Children.Add(Ui.Label("Alert at this level or above"));
+        panel.Children.Add(level);
+        panel.Children.Add(Ui.Label("Also alert on this pattern"));
+        panel.Children.Add(pattern);
+        panel.Children.Add(Hint("Optional regular expression. Matches at any level — useful for a specific error code or customer id. Leave blank to alert on severity only."));
+
+        var throttleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        throttleRow.Children.Add(throttle);
+        throttleRow.Children.Add(new TextBlock { Text = "seconds, per view", Foreground = Ui.Dim, VerticalAlignment = VerticalAlignment.Center });
+        panel.Children.Add(Ui.Label("At most one alert every"));
+        panel.Children.Add(throttleRow);
+        panel.Children.Add(unfocused);
+
+        panel.Children.Add(Ui.Label("How"));
+        panel.Children.Add(toast);
+
+        if (DesktopAlerts.CanPlaySound)
+        {
+            var sound = SoundPicker(settings.MacSoundName, MacSounds.DefaultSound, v => settings.MacSoundName = v);
+            var fatalSound = SoundPicker(settings.MacFatalSoundName, MacSounds.DefaultFatalSound, v => settings.MacFatalSoundName = v);
+            fatalSound.IsEnabled = settings.UseDistinctFatalSound;
+
+            var play = Check("Play a sound", settings.PlaySound, v => settings.PlaySound = v);
+            var distinct = Check("Use a different sound for FATAL", settings.UseDistinctFatalSound, v =>
+            {
+                settings.UseDistinctFatalSound = v;
+                fatalSound.IsEnabled = v;
+            });
+
+            var soundBlock = new StackPanel { Margin = new Thickness(20, 0, 0, 0), IsEnabled = settings.PlaySound };
+            play.IsCheckedChanged += (_, __) => soundBlock.IsEnabled = play.IsChecked == true;
+
+            soundBlock.Children.Add(Ui.Label("Sound"));
+            soundBlock.Children.Add(sound);
+            soundBlock.Children.Add(distinct);
+            soundBlock.Children.Add(Ui.Label("FATAL sound"));
+            soundBlock.Children.Add(fatalSound);
+
+            panel.Children.Add(play);
+            panel.Children.Add(soundBlock);
+        }
+
+        var test = new Button { Content = "Send a test alert" };
+        test.Click += (_, __) => alerts.SendTestAlert();
+        var close = new Button { Content = "Close", IsCancel = true, MinWidth = 80 };
+        close.Click += (_, __) => Close();
+        panel.Children.Add(Ui.Buttons(test, close));
+
+        Content = new Border { Padding = new Thickness(18), Child = panel };
+    }
+
+    /// <summary>
+    /// A system-sound dropdown plus a replay button. Picking one plays it, so you hear
+    /// what you chose; the initial selection does not.
+    /// </summary>
+    private static StackPanel SoundPicker(string current, string fallback, Action<string> assign)
+    {
+        var combo = new ComboBox
+        {
+            ItemsSource = MacSounds.All,
+            SelectedItem = MacSounds.Normalize(current, fallback),
+            Width = 200
+        };
+
+        combo.SelectionChanged += (_, __) =>
+        {
+            if (combo.SelectedItem is not string name) return;
+            assign(name);
+            DesktopAlerts.PlaySound(name);
+        };
+
+        var replay = new Button { Content = "▶", Width = 34 };
+        ToolTip.SetTip(replay, "Play this sound");
+        replay.Click += (_, __) => DesktopAlerts.PlaySound(combo.SelectedItem as string);
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        row.Children.Add(combo);
+        row.Children.Add(replay);
+        return row;
+    }
+
+    private static TextBlock Hint(string text) => new()
+    {
+        Text = text,
+        Foreground = Ui.Dim,
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 2, 0, 6)
+    };
+
+    private static CheckBox Check(string text, bool initial, Action<bool> apply)
+    {
+        var cb = new CheckBox { Content = text, IsChecked = initial, Margin = new Thickness(0, 8, 0, 0) };
+        cb.IsCheckedChanged += (_, __) => apply(cb.IsChecked == true);
+        return cb;
+    }
+}
