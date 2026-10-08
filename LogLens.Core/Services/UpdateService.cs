@@ -167,6 +167,15 @@ public static class UpdateService
             ?? throw new InvalidOperationException("Cannot determine where LogLens is running from.");
         var staged = exePath + StagedSuffix;
 
+        // No checksum means nothing to verify against, and that is a refusal, not a
+        // pass. This used to skip verification silently whenever the release lacked
+        // SHA256SUMS.txt or the file had no LogLens.exe line — including when a proxy
+        // or captive portal answered the sums URL with an HTML page.
+        if (update.ChecksumDownloadUrl is null)
+            throw new InvalidOperationException(
+                "This release has no published checksum, so the download cannot be verified. "
+                + "Not installing it. Download from the releases page directly.");
+
         try
         {
             await using (var output = new FileStream(staged, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -189,21 +198,20 @@ public static class UpdateService
                 }
             }
 
-            if (update.ChecksumDownloadUrl is not null)
+            var sums = await Http.GetStringAsync(update.ChecksumDownloadUrl, ct);
+            var expected = ParseChecksum(sums, ExeAssetName)
+                ?? throw new InvalidOperationException(
+                    $"The release's {ChecksumAssetName} has no entry for {ExeAssetName}, so the download "
+                    + "cannot be verified. Not installing it. Download from the releases page directly.");
+
+            await using (var file = File.OpenRead(staged))
             {
-                var sums = await Http.GetStringAsync(update.ChecksumDownloadUrl, ct);
-                var expected = ParseChecksum(sums, ExeAssetName);
+                var actual = Convert.ToHexString(await SHA256.HashDataAsync(file, ct)).ToLowerInvariant();
 
-                if (expected is not null)
-                {
-                    await using var file = File.OpenRead(staged);
-                    var actual = Convert.ToHexString(await SHA256.HashDataAsync(file, ct)).ToLowerInvariant();
-
-                    if (actual != expected)
-                        throw new InvalidOperationException(
-                            "The downloaded file's checksum does not match the published one. "
-                            + "Not installing it. Try again, or download from the releases page directly.");
-                }
+                if (actual != expected)
+                    throw new InvalidOperationException(
+                        "The downloaded file's checksum does not match the published one. "
+                        + "Not installing it. Try again, or download from the releases page directly.");
             }
 
             return staged;
