@@ -118,7 +118,7 @@ binaries themselves live as release assets.
 What forces the shape:
 
 - **Windows runners are unavoidable.** WPF will not build on Linux, and neither will
-  `tests/RuleCheck` — it exercises the Windows-only alert and sound code.
+  `tests/RuleCheck` — it exercises the Windows-only sound library.
 - **The Mac build needs a real macOS runner**, so executable bits and tar metadata
   come out right.
 
@@ -136,12 +136,24 @@ Silicon) and `LogLens-macos-osx-x64.tar.gz` (Intel): a self-contained
 **`LogLens.app`** — **nothing to install**, the .NET runtime and UI toolkit are
 baked in, exactly like the Windows exe — over the same core: tailing, views,
 merged timeline, severity chips, filters, highlight rules, the per-view issue
-database and Jira tickets. The bundle carries the same icon as the Windows app
-(both are rendered from one piece of artwork by `tools\New-AppIcon.ps1` /
-`New-MacIcns.ps1`). Not yet ported: alerts/sounds, self-update, find-in-tab,
-and the editor/Explorer integrations — the Windows WPF app remains the full
-experience. (Releases before 1.5.3 shipped a bare binary instead of a bundle;
-1.5.2 named it `LogLens`, earlier ones `LogLens.Avalonia`.)
+database and Jira tickets, find-in-tab (`Cmd+F`, `Cmd+G` / `Shift+Cmd+G`), opening a
+log in your text editor or showing it in Finder, and alerts. The bundle carries the
+same icon as the Windows app (both are rendered from one piece of artwork by
+`tools\New-AppIcon.ps1` / `New-MacIcns.ps1`). (Releases before 1.5.3 shipped a bare
+binary instead of a bundle; 1.5.2 named it `LogLens`, earlier ones `LogLens.Avalonia`.)
+
+What differs from Windows, on purpose
+([ADR 0002](docs/adr/0002-macos-parity-scope.md)):
+
+| | Windows | macOS |
+|---|---|---|
+| Find in tab | `Ctrl+F` | `Cmd+F`; `Cmd+G` / `Shift+Cmd+G` (and `F3` / `Shift+F3`) step |
+| Editor | default app for `.log` (Notepad fallback) | default **text** editor (`open -t`) — macOS hands `.log` to Console.app otherwise |
+| Show the file | File Explorer, file selected | Finder, file selected |
+| Alert notification | tray balloon; clicking it jumps to the view | Notification Center banner; clicking it opens Script Editor (an unsigned app can't own its notifications) |
+| Alert sound | Windows sound library or your own `.wav` | one of the macOS system sounds — chosen separately, so a shared workspace keeps both |
+| Taskbar flash | yes | — |
+| Self-update | yes | no — download the new release; a quarantined, unsigned bundle can't be swapped in place |
 
 To run it on a Mac — once, from the folder you extracted into:
 
@@ -217,8 +229,8 @@ managers create it, and you can too. The status bar always shows the path in use
 | **Clear** | Empties the on-screen buffer. Your log file is never written to. |
 | **Show / Hide** | Live include/exclude filters. `.*` treats them as regex, `Aa` makes them case-sensitive. |
 | **F / E / W / I / D chips** | Severity filter — any combination at once, so "errors, warnings and fatals only" is three clicks. Stack traces and other unclassified lines follow the line they belong to, so filtering to errors keeps each error's trace attached. All chips on = show everything. |
-| **Editor** | Opens the tab's log file in your default editor (Notepad if nothing is associated with `.log`). Also on the right-click menu, along with "Show in File Explorer". A wildcard tab opens whichever file it is tailing right now. **In the merged view** these act on the *selected line's* source file — every merged line knows where it came from — and "Go to this line's file tab" jumps to that file's tab with the line selected. |
-| **Find** | `Ctrl+F`. Enter for next, Shift+Enter for previous, with a match count. |
+| **Editor** | Opens the tab's log file in your default editor (Notepad if nothing is associated with `.log`; on macOS, your default text editor). Also on the right-click menu, along with "Show in File Explorer" (Finder on macOS). A wildcard tab opens whichever file it is tailing right now. **In the merged view** these act on the *selected line's* source file — every merged line knows where it came from — and "Go to this line's file tab" jumps to that file's tab with the line selected. |
+| **Find** | `Ctrl+F` (`Cmd+F` on macOS). Enter for next, Shift+Enter for previous, with a match count. |
 | **Opening logs… n/m** | Status-bar progress while the initial tail reads run — with dozens of large files that phase is what makes startup feel slow. If it drags, lower **Load at most N KB when opening** in Settings: 40 files × 2 MB initial window is 80 MB of reads. |
 
 Drag log files onto the window to add them to the current view.
@@ -293,6 +305,15 @@ you before you rely on it.
 Notifications use a tray-icon balloon rather than a WinRT toast on purpose: WinRT
 toasts need a registered AppUserModelID and a packaged identity, which a portable
 single .exe copied onto a jump box does not have.
+
+**On macOS** the same settings decide when to alert — the decision is shared code —
+but delivery is a Notification Center banner and one of the macOS system sounds
+(*Glass* for errors, *Basso* for fatals by default). The Mac sound choice is stored
+separately from the Windows one, so teammates on both platforms can share a
+workspace without overwriting each other's pick. There is no taskbar flash, and
+clicking a banner opens Script Editor rather than jumping to the view — the price of
+posting notifications without a signed app. If banners don't appear, allow
+notifications for **Script Editor** in System Settings ▸ Notifications.
 
 ---
 
