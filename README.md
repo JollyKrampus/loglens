@@ -65,7 +65,17 @@ scoop install loglens/loglens
 A Scoop install is not a portable one — Scoop gives each version its own folder — so
 from 1.5.4 it keeps the workspace in `%APPDATA%\LogLens` and survives
 `scoop update loglens`. Update through Scoop rather than **Check for updates**, so
-Scoop knows which version you have. winget manifests are in `packaging/winget/`.
+Scoop knows which version you have.
+
+LogLens has also been submitted to winget
+([microsoft/winget-pkgs#463042](https://github.com/microsoft/winget-pkgs/pull/463042)).
+Once Microsoft's reviewers merge it, this will work:
+
+```powershell
+winget install JollyKrampus.LogLens
+```
+
+Until then it fails with "no package found". The manifests live in `packaging/winget/`.
 
 ### Updating
 
