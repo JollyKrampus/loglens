@@ -162,3 +162,128 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
+
+  packages:
+    # Points Scoop and winget at the release that was just published, so a new
+    # version reaches `scoop update` and `winget upgrade` without anyone redoing
+    # the manifests by hand. Stable tags only: a prerelease must not become what
+    # package-manager users get.
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    # wingetcreate is a Windows exe.
+    runs-on: windows-latest
+
+    # Push the manifests branch. The pull request itself is opened with
+    # WINGET_TOKEN, because this repo does not let the Actions token create PRs.
+    permissions:
+      contents: write
+
+    env:
+      # A classic token with public_repo scope. Fine-grained tokens cannot open
+      # a pull request against microsoft/winget-pkgs, which another account owns.
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+      # wingetcreate reads its token from here, which keeps it off the command
+      # line, where the tool itself warns it may end up in a log.
+      WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check for the token
+        id: token
+        shell: pwsh
+        run: |
+          if ($env:WINGET_TOKEN) { "ok=true" >> $env:GITHUB_OUTPUT }
+          else { "::warning::WINGET_TOKEN is not set, so the Scoop and winget manifests were not updated. Add it under Settings > Secrets and variables > Actions." }
+
+      - uses: actions/checkout@v7
+        if: steps.token.outputs.ok
+        with:
+          ref: main
+
+      - name: Read the release checksum
+        id: release
+        if: steps.token.outputs.ok
+        shell: pwsh
+        run: |
+          # The hash comes from the release's SHA256SUMS.txt, never a rebuild:
+          # the manifests must describe exactly the file users download.
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          gh release download $env:GITHUB_REF_NAME -p SHA256SUMS.txt -D sums
+          $hash = ((Get-Content sums/SHA256SUMS.txt) -match 'LogLens\.exe$' -split '\s+')[0].ToLower()
+          if ($hash -notmatch '^[0-9a-f]{64}$') { throw "No LogLens.exe hash in SHA256SUMS.txt" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "hash=$hash" >> $env:GITHUB_OUTPUT
+          "url=https://github.com/JollyKrampus/loglens/releases/download/$env:GITHUB_REF_NAME/LogLens.exe" >> $env:GITHUB_OUTPUT
+
+      - name: Update the Scoop manifest
+        if: steps.token.outputs.ok
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          HASH: ${{ steps.release.outputs.hash }}
+          URL: ${{ steps.release.outputs.url }}
+        run: |
+          # Text replacement rather than ConvertFrom-Json/ConvertTo-Json: a round
+          # trip re-indents the file and re-escapes its quotes, turning a three-line
+          # change into a whole-file diff. The autoupdate block's URL uses $version
+          # rather than a number, so the pattern below leaves it alone.
+          $path = 'bucket/loglens.json'
+          $json = Get-Content $path -Raw
+          $json = $json -replace '(?m)^(    "version": )"[^"]*"', "`$1`"$env:VERSION`""
+          $json = $json -replace '"url": "https://github\.com/JollyKrampus/loglens/releases/download/v[0-9][^"]*"', "`"url`": `"$env:URL`""
+          $json = $json -replace '"hash": "[0-9a-f]{64}"', "`"hash`": `"$env:HASH`""
+          Set-Content $path $json -NoNewline
+          git diff --stat
+
+      - name: Write the winget manifests
+        if: steps.token.outputs.ok
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          HASH: ${{ steps.release.outputs.hash }}
+          URL: ${{ steps.release.outputs.url }}
+        run: |
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          # The repo keeps only the current version's manifests, as before.
+          $root = 'packaging/winget/manifests/j/JollyKrampus/LogLens'
+          Remove-Item "$root/*" -Recurse -Force
+          # update starts from the newest version already in winget-pkgs, so the
+          # description and tags carry over and only the version, URL and hash move.
+          ./wingetcreate.exe update JollyKrampus.LogLens --version $env:VERSION --urls $env:URL --out packaging/winget
+          if ($LASTEXITCODE -ne 0) { throw "wingetcreate update failed ($LASTEXITCODE)" }
+
+          # wingetcreate hashes its own download; refuse to submit if that is not
+          # the file the release's checksum describes.
+          $installer = Get-Content "$root/$env:VERSION/JollyKrampus.LogLens.installer.yaml" -Raw
+          if ($installer -notmatch "InstallerSha256:\s*$env:HASH") { throw "winget hash does not match SHA256SUMS.txt" }
+
+      - name: Submit to winget
+        if: steps.token.outputs.ok
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          ./wingetcreate.exe submit "packaging/winget/manifests/j/JollyKrampus/LogLens/$env:VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "wingetcreate submit failed ($LASTEXITCODE)" }
+
+      - name: Open a pull request with the new manifests
+        # Runs even if winget failed, so the Scoop update still lands; the job
+        # stays red in that case, which is the signal to submit winget by hand.
+        if: always() && steps.token.outputs.ok && steps.release.outcome == 'success'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          Remove-Item wingetcreate.exe, sums -Recurse -Force -ErrorAction SilentlyContinue
+          if (-not (git status --porcelain)) { "Nothing changed."; return }
+          $branch = "manifests-$env:VERSION"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b $branch
+          git add -A bucket packaging/winget
+          git commit -m "Point the Scoop and winget manifests at the $env:VERSION release"
+          git push -u origin $branch
+          gh pr create --base main --head $branch `
+            --title "Point the Scoop and winget manifests at the $env:VERSION release" `
+            --body "Written by the release workflow from the v$env:VERSION release's SHA256SUMS.txt. The winget submission is a separate PR on microsoft/winget-pkgs; see this run's log for its link."
