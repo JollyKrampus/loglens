@@ -159,6 +159,16 @@ two `LogLens.app` tarballs and their checksums. Each uploads its output as an ar
 with 1-day retention. On a tag a third job, **release**, downloads both and creates the
 GitHub release with all four files attached.
 
+For a stable tag (no `-`), a fourth job, **packages**, points the package managers
+at that release. It takes the exe's hash from the release's own `SHA256SUMS.txt`,
+updates the Scoop manifest, writes and submits the winget manifest, and opens a PR
+here with both. Without that job, every release would leave `scoop update` and
+`winget upgrade` offering the old version until someone remembered. Doing it by hand
+also invites the one mistake that matters, a hash that doesn't match the download.
+The job needs a `WINGET_TOKEN` repository secret: a classic token with
+`public_repo` scope, because opening a PR on `microsoft/winget-pkgs` needs
+an account with access beyond this repo. Without the secret, the job only warns.
+
 Artifacts are used only because they have to be. Every job starts on a clean machine,
 and the release job needs the output of two *different* runners — one Windows, one
 macOS — in the same place. That is the case artifacts exist for, and the 1-day

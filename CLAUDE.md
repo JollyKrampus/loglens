@@ -179,12 +179,16 @@ history — nearly every "Fix what the review confirmed" commit adds one.
    - `LogLens.Avalonia/LogLens.Avalonia.csproj` (`<Version>`, `<InformationalVersion>`)
 2. Move `CHANGELOG.md`'s **Unreleased** section under the new version and date.
 3. `git tag -a v1.5.5 -m "what changed" && git push origin v1.5.5`
-4. Once the release exists, point the package manifests at it: `bucket/loglens.json`
-   (`version`, `url`, `hash` — Scoop's `checkver.ps1 -u` fills them from the
-   `autoupdate` block) and a new `packaging/winget/manifests/…/<version>/` folder
-   (`wingetcreate update JollyKrampus.LogLens -v <version> -u <exe url>` writes
-   it; submitting to `microsoft/winget-pkgs` is a manual PR). Hashes come from the
-   release's `SHA256SUMS.txt`, never from a local build.
+4. The package manifests follow automatically. For a stable tag, the `packages` job
+   reads the hash from the release's `SHA256SUMS.txt` (never a local build), updates
+   `bucket/loglens.json`, writes `packaging/winget/manifests/…/<version>/` with
+   `wingetcreate update`, refuses to go on if wingetcreate's hash differs, submits
+   to `microsoft/winget-pkgs`, and opens a `manifests-<version>` PR here. It needs
+   the `WINGET_TOKEN` secret (a classic token with `public_repo`); without it the
+   job only warns. If the job goes red, the winget submission didn't happen: run
+   `wingetcreate submit packaging/winget/manifests/j/JollyKrampus/LogLens/<version>`
+   by hand. `wingetcreate update` starts from what winget-pkgs already has, so it
+   can't run until the first submission (1.5.4) is merged there.
 
 CI does the rest: three jobs — `build-windows` (always builds + runs checks; publishes
 the exe and `SHA256SUMS.txt` only on a tag or manual run), `build-macos` (tag/manual
