@@ -7,6 +7,46 @@ and at-a-glance error counts per environment.
 
 No installer, no service, no account, no telemetry, no licence.
 
+![Three Prod log files merged into one timeline, coloured by severity, with error badges per view in the sidebar](docs/screenshots/merged-timeline.png)
+
+---
+
+## Quick start
+
+1. **Get it.** Download `LogLens.exe` from the
+   [releases page](https://github.com/JollyKrampus/loglens/releases) and run it, or
+   `scoop install loglens/loglens` (see [Releases](#releases) for the bucket line).
+   There is no installer, so there is nothing to uninstall either.
+2. **Make a view.** The sidebar starts with Dev, Test and Prod; **View ▸ Add view…**
+   makes another. A view is what everything else hangs off — the badge, the alerts,
+   the issue list — so make one per environment or per group of services you watch
+   together.
+3. **Add files.** Drag logs onto the window, or use **Files ▸ Add log file(s)…** or
+   **Add wildcard path…** (`app-*.log` follows the roll at midnight). Rename each
+   source in **View ▸ Edit current view…**: `Orders API` reads better than
+   `prod-app.log`, and that name is what the tabs, the merged timeline and the Issues
+   window show.
+4. **Merge them.** **Files ▸ Merged timeline for this view** adds a **Merged** tab
+   that interleaves every file by timestamp, so a payments timeout and the order
+   failure it caused sit on adjacent lines instead of in two windows.
+5. **See what keeps breaking.** **Tools ▸ Issues…** (`Ctrl+I`) groups every
+   fatal, error and warning into distinct problems — one bug logged ten thousand
+   times is one row. The **Application** dropdown narrows it to one source and
+   shows how many issues each holds, which answers "which service is noisiest in
+   Prod?" in one click. Any row copies out as a Jira ticket.
+
+   ![The Issues window for the Prod view, with the Application dropdown open showing per-application issue counts](docs/screenshots/issues-by-application.png)
+
+6. **Look away.** With LogLens in the background, an ERROR or FATAL line raises a
+   Windows notification; clicking it jumps to the view. It is throttled per view so a
+   failing service can't bury you, and **Alerts ▸ Send a test alert** checks it
+   reaches you before you rely on it.
+
+   ![A LogLens notification for an ERROR line from Orders API in the Prod view](docs/screenshots/alert.png)
+
+The rest of this page explains each of those in depth, and why it works the way it
+does.
+
 ---
 
 ## Releases
