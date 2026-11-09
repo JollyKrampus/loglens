@@ -10,7 +10,7 @@
           This is the one to drop on a USB stick or a jump box.
 
       -Mode Framework
-          One .exe, ~3 MB, requires the .NET 8 Desktop Runtime on the target.
+          One .exe, ~3 MB, requires the .NET 10 Desktop Runtime on the target.
           Good when you control the fleet and the runtime is already there.
 
     Output lands in .\dist\.

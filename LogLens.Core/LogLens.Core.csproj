@@ -2,12 +2,12 @@
 
   <PropertyGroup>
     <!--
-      Deliberately plain net8.0 with no UI framework: this is everything LogLens
+      Deliberately plain net10.0 with no UI framework: this is everything LogLens
       knows how to do, minus how it looks. The WPF app references it today; the
       Avalonia app (issue #1) references it tomorrow. Nothing in here may touch
       System.Windows.* — that is the whole point of the split.
     -->
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -17,7 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
   </ItemGroup>
 
 </Project>

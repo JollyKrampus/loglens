@@ -241,7 +241,7 @@ That produces a single self-contained executable in `dist\SelfContained\LogLens.
 (~63 MB). Copy it anywhere — a USB stick, a jump box, a network share — and run it.
 Nothing needs to be installed on the target machine.
 
-If the machines you care about already have the **.NET 8 Desktop Runtime**, you can
+If the machines you care about already have the **.NET 10 Desktop Runtime**, you can
 build a ~3 MB executable instead:
 
 ```powershell

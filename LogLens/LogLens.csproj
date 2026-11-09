@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -19,11 +19,12 @@
     <AssemblyTitle>LogLens - real-time log viewer</AssemblyTitle>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!--
-      WFAC010 is the WinForms analyser insisting DPI be set via ApplicationHighDpiMode.
+      WFAC010 (WFO0003 from .NET 9 on) is the WinForms analyser insisting DPI be set via
+      ApplicationHighDpiMode.
       This is a WPF app: the manifest is the correct place, and that property does not
       apply. WinForms is only here for the colour and font pickers.
     -->
-    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <NoWarn>$(NoWarn);WFAC010;WFO0003</NoWarn>
     <!--
       Do NOT set InvariantGlobalization. WPF's XmlLanguage.GetSpecificCulture()
       needs real ICU culture data; without it every binding throws during layout.
