@@ -27,7 +27,7 @@ Current version: **1.5.4** (see "Releasing" for the three places that number liv
 ## Repository layout
 
 ```
-LogLens.Core/          net8.0, NO UI framework. Models, services, view-models.
+LogLens.Core/          net10.0, NO UI framework. Models, services, view-models.
   Models/              LogLine, HighlightRule + Severity, Workspace (the JSON contract)
   Services/            LogTailer, TimestampParser, RuleSet, SeverityFilter,
                        WorkspaceStore, IssueStore/IssueRecorder/SignatureBuilder,
@@ -38,7 +38,7 @@ LogLens.Core/          net8.0, NO UI framework. Models, services, view-models.
   IUiThread.cs         the only UI-framework dependency, as an interface
   BulkObservableCollection.cs, ObservableObject.cs
 
-LogLens/               net8.0-windows, WPF + WinForms. The flagship app.
+LogLens/               net10.0-windows, WPF + WinForms. The flagship app.
   MainWindow.xaml(.cs) the shell: menus, sidebar, tabs, status bar, update handoff
   Controls/LogPane     the virtualized log list (both file tabs and merged use it)
   Dialogs/             Settings, Rules, Issues, Alerts, ViewEdit, Update, Prompt
@@ -48,13 +48,13 @@ LogLens/               net8.0-windows, WPF + WinForms. The flagship app.
   Core/                WpfUiThread, WPF converters, RelayCommand
   Themes/              Dark.xaml, Light.xaml, Controls.xaml (control templates)
 
-LogLens.Avalonia/      net8.0, Avalonia 11.3. The macOS (and future Linux) shell.
+LogLens.Avalonia/      net10.0, Avalonia 11.3. The macOS (and future Linux) shell.
                        Binds the same LogLens.Core view-models as WPF. Ten files:
                        Program/App/MainWindow, Dialogs, GridDialogs, Support,
                        ShellOpen (open -t / open -R / xdg-open), DesktopAlerts
                        (osascript banner + afplay; notify-send on Linux).
 
-tests/RuleCheck/       net8.0-windows console app. The entire test suite.
+tests/RuleCheck/       net10.0-windows console app. The entire test suite.
 
 tools/                 PowerShell: test-log generators, icon and splash renderers
 packaging/             Info.plist, LogLens.icns, macos-readme.txt for the .app bundle
@@ -100,7 +100,7 @@ before proposing a different UI stack.
 
 **Nothing here builds on Linux except `LogLens.Core` and `LogLens.Avalonia`.** WPF
 (`LogLens`) and the test project (`tests/RuleCheck`, which exercises the Windows-only
-`SoundLibrary`) target `net8.0-windows` and require a Windows host.
+`SoundLibrary`) target `net10.0-windows` and require a Windows host.
 Linux dev containers for this repo also tend to ship without a `dotnet` SDK at all —
 check with `dotnet --version` first, and if you cannot compile or run the checks, say
 so plainly rather than reporting a change as verified.
@@ -109,7 +109,7 @@ so plainly rather than reporting a change as verified.
 # Portable self-contained exe -> dist\SelfContained\LogLens.exe (~63 MB)
 .\build.ps1
 
-# ~3 MB exe, needs the .NET 8 Desktop Runtime on the target
+# ~3 MB exe, needs the .NET 10 Desktop Runtime on the target
 .\build.ps1 -Mode Framework
 
 # What CI runs
@@ -369,7 +369,7 @@ a manual dispatch from a branch called `version-bump` would otherwise stamp
 
 ## Code conventions
 
-- **C# 12 / .NET 8**, `Nullable` and `ImplicitUsings` enabled everywhere,
+- **C# 14 / .NET 10**, `Nullable` and `ImplicitUsings` enabled everywhere,
   `LangVersion latest`. Collection expressions (`[]`), file-scoped namespaces,
   primary-constructor-free `sealed` classes, `record` for value-ish payloads
   (`TailBatch`, `IssueFingerprint`, `IssueOccurrence`, `LinesAppendedEventArgs`).
