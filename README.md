@@ -67,15 +67,17 @@ from 1.5.4 it keeps the workspace in `%APPDATA%\LogLens` and survives
 `scoop update loglens`. Update through Scoop rather than **Check for updates**, so
 Scoop knows which version you have.
 
-LogLens has also been submitted to winget
-([microsoft/winget-pkgs#463042](https://github.com/microsoft/winget-pkgs/pull/463042)).
-Once Microsoft's reviewers merge it, this will work:
+LogLens is also submitted to winget:
 
 ```powershell
 winget install JollyKrampus.LogLens
 ```
 
-Until then it fails with "no package found". The manifests live in `packaging/winget/`.
+New packages wait for a volunteer moderator in
+[microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs/pull/463042), so if
+that says "no package found", the first version hasn't been approved yet; use the
+releases page or Scoop meanwhile. Once it's in, each new release reaches
+`winget upgrade` automatically. The manifests live in `packaging/winget/`.
 
 ### Updating
 
